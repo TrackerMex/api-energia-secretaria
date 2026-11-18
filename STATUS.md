@@ -1,10 +1,18 @@
 # Piloto Wialon–SENER
 
 **Última actualización**: 2026-11-18
-**Features completadas**: 0/1 (`feature_list.json`)
-**Pendientes**: piloto de una unidad
+**Features completadas**: 1/1 (`feature_list.json`)
+**Pendientes**: prueba externa diferida por decisión del usuario
 **En producción**: no
 
 ## Estado actual
 
-Proyecto Go iniciado con el harness `33ffd92`. La primera feature está en preparación para aprobación humana. El entorno previsto es el VPS existente de Hostinger y el destino de prueba es SENER desarrollo.
+El piloto de una unidad está implementado y aprobado en local. La verificación usó Wialon y SENER simulados en loopback, SQLite temporal y datos ficticios. Se probaron paginación, mapeo, validación, multipart, recuperación tras reinicio y repetición de una ventana ya aceptada.
+
+## Última sesión
+
+El usuario eligió CR-13 y aprobó los requisitos. La revisión independiente verificó la entrega `5ba50b0`; los detalles están en [el informe](progress/review_piloto-una-unidad.md). El operador decidió continuar únicamente en local. La configuración de despliegue está preparada para revisión posterior.
+
+## Para retomar la prueba real
+
+Confirmar las credenciales y ficha privadas, la fuente verificable de estado de conexión GPS, la IP de salida autorizada y la frecuencia operativa acordada. En el VPS el almacenamiento previsto es SQLite en `/var/lib/wialon-sener/pilot.db`. La prueba local se reproduce desde el [README](README.md).
