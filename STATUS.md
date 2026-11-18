@@ -1,20 +1,18 @@
 # Piloto Wialon–SENER
 
 **Última actualización**: 2026-11-18
-**Features completadas**: 1/2 (`feature_list.json`)
-**Pendientes**: implementación del receptor TCP para CR-13 y su historial local
+**Features completadas**: 2/2 (`feature_list.json`)
+**Pendientes**: prueba con una unidad real y conexión del historial TCP a la entrega de SENER
 **En producción**: no
 
 ## Estado actual
 
-El piloto de una unidad está implementado y aprobado en local. La verificación usó Wialon y SENER simulados en loopback, SQLite temporal y datos ficticios. Se probaron paginación, mapeo, validación, multipart, recuperación tras reinicio y repetición de una ventana ya aceptada.
-
-La siguiente fase elegida es recibir Wialon Retranslator por TCP y guardar el historial de CR-13. Se desarrollará primero con paquetes sintéticos en este equipo.
+El proyecto tiene dos flujos locales. El receptor TCP guarda posiciones en SQLite y permite consultar la última o un intervalo por hora del GPS. El piloto de Remote API tiene su propia cola SQLite de envíos y contempla SENER desarrollo. Ambos se validaron con datos sintéticos.
 
 ## Última sesión
 
-El usuario eligió CR-13 y aprobó los requisitos. La revisión independiente verificó la entrega `5ba50b0`; los detalles están en [el informe](progress/review_piloto-una-unidad.md). El operador decidió continuar únicamente en local. La configuración de despliegue está preparada para revisión posterior.
+El usuario aprobó los seis requisitos del receptor de CR-13. La demostración con el ejecutable recibió una posición ficticia, reinició el proceso, reprodujo la misma trama y recuperó una sola posición con el servicio detenido. El ejemplo usa `state/cr13-demo.db`. La revisión independiente verificó la entrega TCP. [Informe de revisión](progress/review_receptor-tcp-cr13.md) · [Guía para repetir el ensayo](README.md)
 
 ## Para retomar la prueba real
 
-Confirmar las credenciales y ficha privadas, la fuente verificable de estado de conexión GPS, la IP de salida autorizada y la frecuencia operativa acordada. En el VPS el almacenamiento previsto es SQLite en `/var/lib/wialon-sener/pilot.db`. La prueba local se reproduce desde el [README](README.md).
+El piloto permanece en este equipo. Para la etapa externa quedan por confirmar el UID que retransmite CR-13, la ficha privada y las señales requeridas por SENER, la IP de salida autorizada y la frecuencia operativa. El servicio de Remote API tiene prevista su base de reportes en `/var/lib/wialon-sener/pilot.db` en el VPS. [Datos y despliegue](deploy/README.md) · [Revisión de los dos manuales](docs/frecuencia-sener.md)
