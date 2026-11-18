@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -64,7 +65,9 @@ func (p Profile) validate(unit int64) error {
 }
 
 type message struct {
-	Timestamp int64 `json:"t"`
+	Flags     uint32  `json:"f"`
+	Inputs    *uint32 `json:"i"`
+	Timestamp int64   `json:"t"`
 	Position  *struct {
 		Longitude *float64 `json:"x"`
 		Latitude  *float64 `json:"y"`
@@ -100,6 +103,18 @@ func binarySignal(raw json.RawMessage) (bool, bool) {
 		}
 	}
 	return false, false
+}
+
+func (m message) signal(selector string) (bool, bool) {
+	index, digital := strings.CutPrefix(selector, "digital:in")
+	if !digital {
+		return binarySignal(m.Params[selector])
+	}
+	n, err := strconv.Atoi(index)
+	if err != nil || n < 1 || n > 32 || m.Flags&0x02 == 0 || m.Inputs == nil {
+		return false, false
+	}
+	return (*m.Inputs & (uint32(1) << (n - 1))) != 0, true
 }
 
 type geo struct {
@@ -158,13 +173,13 @@ func Report(p Position, profile Profile, transmissionID string) ([]byte, error) 
 	if coord.Speed == nil || *coord.Speed < 0 {
 		return nil, errors.New("velocidad GPS ausente o negativa")
 	}
-	ignition, ok := binarySignal(m.Params[profile.IgnitionParam])
+	ignition, ok := m.signal(profile.IgnitionParam)
 	if !ok {
-		return nil, fmt.Errorf("lectura de ignición desconocida en p.%s", profile.IgnitionParam)
+		return nil, fmt.Errorf("lectura de ignición desconocida en %s", profile.IgnitionParam)
 	}
-	connected, ok := binarySignal(m.Params[profile.ConnectionParam])
+	connected, ok := m.signal(profile.ConnectionParam)
 	if !ok {
-		return nil, fmt.Errorf("lectura de conexión desconocida en p.%s", profile.ConnectionParam)
+		return nil, fmt.Errorf("lectura de conexión desconocida en %s", profile.ConnectionParam)
 	}
 	state := "desconectado"
 	if connected {
