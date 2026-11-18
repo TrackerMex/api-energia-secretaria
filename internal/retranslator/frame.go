@@ -52,6 +52,7 @@ func decodeFrame(frame []byte) (domain.GPSFix, bool, error) {
 	}
 	fix.UID = string(uid)
 	fix.GPSTime = time.Unix(int64(binary.BigEndian.Uint32(metadata)), 0).UTC()
+	positionFlag := binary.BigEndian.Uint32(metadata[4:8])&1 != 0
 	blocks := metadata[8:]
 	var hasPosition bool
 	for len(blocks) > 0 {
@@ -98,6 +99,9 @@ func decodeFrame(frame []byte) (domain.GPSFix, bool, error) {
 			return fix, false, errInvalidFrame
 		}
 		hasPosition = true
+	}
+	if hasPosition != positionFlag {
+		return fix, false, errInvalidFrame
 	}
 	if hasPosition {
 		fix.Fingerprint = sha256.Sum256(frame)

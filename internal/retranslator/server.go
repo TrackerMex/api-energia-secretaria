@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net"
 	"sync"
-	"time"
 
 	"wialon-sener-pilot/internal/domain"
 )
@@ -62,12 +61,6 @@ func receive(ctx context.Context, conn net.Conn, handle func(context.Context, do
 			if err := handle(ctx, fix); err != nil {
 				return err
 			}
-		}
-		if err := conn.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil {
-			return nil
-		}
-		if _, err := conn.Write([]byte{0x11}); err != nil {
-			return nil
 		}
 	}
 	return nil
