@@ -54,7 +54,7 @@ func TestR5Classify(t *testing.T) {
 	}{
 		{200, `{"error":0}`, Accepted}, {200, `{}`, Uncertain}, {200, `{"error":"0"}`, Uncertain},
 		{200, `{"error":1,"code_error":"INV","error_description":"secret-value"}`, Rejected},
-		{422, `{}`, Rejected}, {429, `{}`, Pending}, {500, `{}`, Uncertain}, {200, `invalid`, Uncertain},
+		{401, `{}`, Pending}, {422, `{}`, Rejected}, {429, `{}`, Pending}, {500, `{}`, Uncertain}, {200, `invalid`, Uncertain},
 	} {
 		t.Run(fmt.Sprintf("%d-%s", tc.status, tc.body), func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -67,6 +67,9 @@ func TestR5Classify(t *testing.T) {
 			got := (Sender{URL: server.URL, Token: "fake", Client: server.Client()}).Send(context.Background(), "XAXX010101000", []byte("{}"))
 			if got.State != tc.want || strings.Contains(got.Detail, "secret-value") {
 				t.Fatalf("outcome = %+v", got)
+			}
+			if tc.status == 200 && strings.Contains(tc.body, "INV") && !strings.Contains(got.Detail, "code=INV") {
+				t.Fatal("missing application error code")
 			}
 			if tc.status == 429 && got.RetryAt.Before(now.Add(119*time.Second)) {
 				t.Fatal("Retry-After ignored")
