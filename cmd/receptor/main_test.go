@@ -43,7 +43,12 @@ func TestR6TCPHistoryLocal(t *testing.T) {
 		r, w := io.Pipe()
 		ready := make(chan string, 1)
 		done := make(chan error, 1)
-		go func() { var label, addr string; fmt.Fscan(r, &label, &addr); ready <- addr; io.Copy(io.Discard, r) }()
+		go func() {
+			var label, addr string
+			fmt.Fscan(r, &label, &addr)
+			ready <- addr
+			io.Copy(io.Discard, r)
+		}()
 		go func() {
 			done <- run(ctx, []string{"listen", "-uid", uid, "-db", db, "-listen", "127.0.0.1:0"}, io.Discard, w)
 			w.Close()
@@ -84,9 +89,12 @@ func TestR6TCPHistoryLocal(t *testing.T) {
 		if _, e = c.Write(frame); e != nil {
 			t.Fatal(e)
 		}
-		var ack [1]byte
-		if _, e = io.ReadFull(c, ack[:]); e != nil || ack[0] != 0x11 {
-			t.Fatalf("ack=%x err=%v", ack, e)
+		if err := c.(*net.TCPConn).CloseWrite(); err != nil {
+			t.Fatal(err)
+		}
+		data, err := io.ReadAll(c)
+		if err != nil || len(data) != 0 {
+			t.Fatalf("respuesta inesperada: %x, err=%v", data, err)
 		}
 	}
 	type pos struct {
@@ -127,6 +135,13 @@ func TestR6TCPHistoryLocal(t *testing.T) {
 			t.Fatalf("got %+v want %+v", p, want)
 		}
 	}
+	check(query("latest"))
+	// Next GPS second, flags zero and no data blocks, followed by an incomplete frame.
+	noFix, err := hex.DecodeString("1200000044454d4f2d435231330068fb6a4100000000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	send(addr, append(noFix, packet[:8]...))
 	check(query("latest"))
 	stop()
 	check(query("latest"))
