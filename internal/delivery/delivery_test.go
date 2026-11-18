@@ -12,6 +12,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"wialon-sener-pilot/internal/domain"
 )
 
 func TestR4Multipart(t *testing.T) {
@@ -41,7 +43,7 @@ func TestR4Multipart(t *testing.T) {
 	}))
 	defer server.Close()
 	got := (Sender{URL: server.URL, Token: "ficticio", Client: server.Client()}).Send(context.Background(), "XAXX010101000", payload)
-	if got.State != Accepted {
+	if got.State != domain.Accepted {
 		t.Fatalf("outcome = %+v", got)
 	}
 }
@@ -52,9 +54,9 @@ func TestR5Classify(t *testing.T) {
 		body   string
 		want   string
 	}{
-		{200, `{"error":0}`, Accepted}, {200, `{}`, Uncertain}, {200, `{"error":"0"}`, Uncertain},
-		{200, `{"error":1,"code_error":"INV","error_description":"secret-value"}`, Rejected},
-		{401, `{}`, Pending}, {422, `{}`, Rejected}, {429, `{}`, Pending}, {500, `{}`, Uncertain}, {200, `invalid`, Uncertain},
+		{200, `{"error":0}`, domain.Accepted}, {200, `{}`, domain.Uncertain}, {200, `{"error":"0"}`, domain.Uncertain},
+		{200, `{"error":1,"code_error":"INV","error_description":"secret-value"}`, domain.Rejected},
+		{401, `{}`, domain.Pending}, {422, `{}`, domain.Rejected}, {429, `{}`, domain.Pending}, {500, `{}`, domain.Uncertain}, {200, `invalid`, domain.Uncertain},
 	} {
 		t.Run(fmt.Sprintf("%d-%s", tc.status, tc.body), func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -91,57 +93,57 @@ func TestR6RestartAndCursor(t *testing.T) {
 	}
 	s := open()
 	from, to := time.Unix(10, 0), time.Unix(20, 0)
-	makeInput := func(key string) Input {
-		return Input{Key: key, Build: func(id string) ([]byte, error) { return json.Marshal(map[string]string{"uuid": id}) }}
+	makeInput := func(key string) domain.Input {
+		return domain.Input{Key: key, Build: func(id string) ([]byte, error) { return json.Marshal(map[string]string{"uuid": id}) }}
 	}
-	if err := s.SaveWindow(ctx, from, to, []Input{makeInput("good"), {Key: "", Build: func(string) ([]byte, error) { return nil, nil }}}); err == nil {
+	if err := s.SaveWindow(ctx, from, to, []domain.Input{makeInput("good"), {Key: "", Build: func(string) ([]byte, error) { return nil, nil }}}); err == nil {
 		t.Fatal("expected rollback")
 	}
 	if cursor, err := s.Cursor(ctx); err != nil || !cursor.IsZero() {
 		t.Fatalf("uncommitted cursor: %v %v", cursor, err)
 	}
-	if err := s.SaveWindow(ctx, from, to, []Input{makeInput("good"), makeInput("interrupted")}); err != nil {
+	if err := s.SaveWindow(ctx, from, to, []domain.Input{makeInput("good"), makeInput("interrupted")}); err != nil {
 		t.Fatal(err)
 	}
-	first, err := s.claim(ctx, time.Now())
+	first, err := s.Claim(ctx, time.Now())
 	if err != nil || first == nil {
 		t.Fatal(first, err)
 	}
 	if ok := regexp.MustCompile("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$").MatchString(first.ID); !ok {
 		t.Fatal("invalid UUID")
 	}
-	if err = s.finish(ctx, first.ID, Outcome{State: Pending, RetryAt: time.Now().Add(5 * time.Minute)}); err != nil {
+	if err = s.Finish(ctx, first.ID, domain.Outcome{State: domain.Pending, RetryAt: time.Now().Add(5 * time.Minute)}); err != nil {
 		t.Fatal(err)
 	}
-	if retry, err := s.claim(ctx, time.Now()); err != nil || retry != nil {
+	if retry, err := s.Claim(ctx, time.Now()); err != nil || retry != nil {
 		t.Fatalf("expected cooldown: %v %v", retry, err)
 	}
 	later := time.Now().Add(time.Hour)
-	retry, err := s.claim(ctx, later)
+	retry, err := s.Claim(ctx, later)
 	if err != nil || retry == nil || retry.ID != first.ID {
 		t.Fatal("retry changed id", err)
 	}
-	if err = s.finish(ctx, retry.ID, Outcome{State: Accepted}); err != nil {
+	if err = s.Finish(ctx, retry.ID, domain.Outcome{State: domain.Accepted}); err != nil {
 		t.Fatal(err)
 	}
-	crash, err := s.claim(ctx, later)
+	crash, err := s.Claim(ctx, later)
 	if err != nil || crash == nil {
 		t.Fatal("missing second record", err)
 	}
 	s.Close()
 	s = open()
 	defer s.Close()
-	if err := s.SaveWindow(ctx, from, to, []Input{makeInput("good"), makeInput("interrupted")}); err != nil {
+	if err := s.SaveWindow(ctx, from, to, []domain.Input{makeInput("good"), makeInput("interrupted")}); err != nil {
 		t.Fatal(err)
 	}
-	if again, err := s.claim(ctx, later); err != nil || again != nil {
+	if again, err := s.Claim(ctx, later); err != nil || again != nil {
 		t.Fatalf("resent completed/uncertain rows: %v %v", again, err)
 	}
 	if cursor, err := s.Cursor(ctx); err != nil || !cursor.Equal(to) {
 		t.Fatal("missing checkpoint", cursor, err)
 	}
 	counts, err := s.Counts(ctx)
-	if err != nil || counts[Accepted] != 1 || counts[Uncertain] != 1 {
+	if err != nil || counts[domain.Accepted] != 1 || counts[domain.Uncertain] != 1 {
 		t.Fatal(counts, err)
 	}
 	if wrong, err := Open(path, 99, rfc); err == nil {

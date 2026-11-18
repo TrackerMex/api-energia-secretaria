@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"wialon-sener-pilot/internal/application"
 	"wialon-sener-pilot/internal/delivery"
 	"wialon-sener-pilot/internal/ingest"
 )
@@ -68,8 +69,9 @@ func TestR7SingleUnitEndToEnd(t *testing.T) {
 	defer store.Close()
 	source := ingest.Source{BaseURL: wialon.URL, Token: "read-only-fixture", Client: wialon.Client()}
 	sender := delivery.Sender{URL: sener.URL, Token: "fixture", Client: sener.Client()}
+	pilot := application.Pilot{Outbox: store, Source: source, Sender: sender, Profile: profile}
 	for i := 0; i < 2; i++ {
-		if err := runWindow(context.Background(), store, source, sender, 7, profile, time.Unix(ts-1, 0), time.Unix(ts+1, 0)); err != nil {
+		if err := pilot.RunWindow(context.Background(), time.Unix(ts-1, 0), time.Unix(ts+1, 0)); err != nil {
 			t.Fatal(err)
 		}
 	}

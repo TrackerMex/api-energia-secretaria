@@ -16,12 +16,14 @@ import (
 	"syscall"
 	"time"
 
+	"wialon-sener-pilot/internal/application"
 	"wialon-sener-pilot/internal/delivery"
+	"wialon-sener-pilot/internal/domain"
 	"wialon-sener-pilot/internal/ingest"
 )
 
-func loadProfile(path string) (ingest.Profile, error) {
-	var profile ingest.Profile
+func loadProfile(path string) (domain.Profile, error) {
+	var profile domain.Profile
 	file, err := os.Open(path)
 	if err != nil {
 		return profile, err
@@ -33,25 +35,6 @@ func loadProfile(path string) (ingest.Profile, error) {
 		return profile, errors.New("invalid unit profile JSON")
 	}
 	return profile, nil
-}
-
-func runWindow(ctx context.Context, store *delivery.Store, source ingest.Source, sender delivery.Sender, unit int64, profile ingest.Profile, from, to time.Time) error {
-	// Previously captured reports can progress even if Wialon is unavailable.
-	if err := store.Deliver(ctx, sender); err != nil {
-		return err
-	}
-	positions, err := source.Positions(ctx, unit, from, to)
-	if err != nil {
-		return err
-	}
-	inputs := make([]delivery.Input, 0, len(positions))
-	for _, p := range positions {
-		inputs = append(inputs, delivery.Input{Key: p.Key, Build: func(id string) ([]byte, error) { return ingest.Report(p, profile, id) }})
-	}
-	if err := store.SaveWindow(ctx, from, to, inputs); err != nil {
-		return err
-	}
-	return store.Deliver(ctx, sender)
 }
 
 func utcInstant(raw string) (time.Time, error) {
@@ -126,6 +109,7 @@ func run(ctx context.Context) error {
 		return err
 	}
 	defer store.Close()
+	pilot := application.Pilot{Outbox: store, Source: source, Sender: sender, Profile: profile}
 	initial := from
 	for {
 		if *watch {
@@ -147,7 +131,7 @@ func run(ctx context.Context) error {
 			if stop.After(to) {
 				stop = to
 			}
-			err = runWindow(ctx, store, source, sender, unit, profile, from, stop)
+			err = pilot.RunWindow(ctx, from, stop)
 			if err != nil {
 				if !*watch || ctx.Err() != nil {
 					return err
@@ -165,7 +149,7 @@ func run(ctx context.Context) error {
 			return err
 		}
 		fmt.Printf("accepted=%d pending=%d rejected=%d invalid=%d uncertain=%d\n",
-			counts[delivery.Accepted], counts[delivery.Pending], counts[delivery.Rejected], counts[delivery.Invalid], counts[delivery.Uncertain])
+			counts[domain.Accepted], counts[domain.Pending], counts[domain.Rejected], counts[domain.Invalid], counts[domain.Uncertain])
 		if !*watch {
 			return nil
 		}

@@ -8,14 +8,16 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"wialon-sener-pilot/internal/domain"
 )
 
 const sample = `{"t":100,"tp":"ud","f":3,"pos":{"x":-100,"y":20,"c":90,"s":0},"p":{"ign":1,"online":1}}`
 const profileJSON = `{"wialon_unit_id":7,"rfc":"XAXX010101000","razon_social":"DEMO","vehiculo":{"id_unidad":"DEMO-01","numero_permiso":"FICTICIO","placa":"DEMO001","vin":"DEMX0000000000001","tipo_carga":"M","tipo_vehiculo":"A"},"imei":"000000000000000","ignition_param":"ign","connection_param":"online"}`
 
-func demoProfile(t *testing.T) Profile {
+func demoProfile(t *testing.T) domain.Profile {
 	t.Helper()
-	var profile Profile
+	var profile domain.Profile
 	if err := json.Unmarshal([]byte(profileJSON), &profile); err != nil {
 		t.Fatal(err)
 	}
@@ -98,9 +100,9 @@ func TestR1IncompletePageAndErrors(t *testing.T) {
 }
 
 func TestR2BuildSENERPosition(t *testing.T) {
-	p := Position{UnitID: 7, Message: json.RawMessage(sample)}
+	p := domain.Position{UnitID: 7, Message: json.RawMessage(sample)}
 	const uuid = "00000000-0000-4000-8000-000000000001"
-	b, err := Report(p, demoProfile(t), uuid)
+	b, err := domain.Report(p, demoProfile(t), uuid)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +130,7 @@ func TestR3RejectMissingAndUnknownRequiredValues(t *testing.T) {
 		strings.Replace(sample, `"y":20`, `"y":100`, 1),
 		strings.Replace(sample, `"t":100`, `"other":100`, 1),
 	} {
-		if _, err := Report(Position{UnitID: 7, Message: json.RawMessage(invalid)}, p, "00000000-0000-4000-8000-000000000001"); err == nil {
+		if _, err := domain.Report(domain.Position{UnitID: 7, Message: json.RawMessage(invalid)}, p, "00000000-0000-4000-8000-000000000001"); err == nil {
 			t.Fatalf("accepted invalid message: %s", invalid)
 		}
 	}
@@ -137,11 +139,11 @@ func TestR3RejectMissingAndUnknownRequiredValues(t *testing.T) {
 		strings.Replace(profileJSON, `"wialon_unit_id":7`, `"wialon_unit_id":8`, 1),
 		strings.Replace(profileJSON, "DEMX0000000000001", "VIN-CORTO", 1),
 	} {
-		var bad Profile
+		var bad domain.Profile
 		if err := json.Unmarshal([]byte(profileText), &bad); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := Report(Position{UnitID: 7, Message: json.RawMessage(sample)}, bad, "00000000-0000-4000-8000-000000000001"); err == nil {
+		if _, err := domain.Report(domain.Position{UnitID: 7, Message: json.RawMessage(sample)}, bad, "00000000-0000-4000-8000-000000000001"); err == nil {
 			t.Fatal("accepted invalid profile")
 		}
 	}

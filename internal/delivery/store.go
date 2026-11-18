@@ -11,21 +11,12 @@ import (
 	"time"
 
 	_ "modernc.org/sqlite"
+
+	"wialon-sener-pilot/internal/domain"
 )
 
 type Store struct {
-	db  *sql.DB
-	rfc string
-}
-
-type Input struct {
-	Key   string
-	Build func(id string) ([]byte, error)
-}
-
-type envelope struct {
-	ID   string
-	Body []byte
+	db *sql.DB
 }
 
 func Open(path string, unitID int64, rfc string) (*Store, error) {
@@ -82,7 +73,7 @@ CREATE INDEX IF NOT EXISTS by_status ON reports(status,retry_at);`)
 		return nil, errors.New("database belongs to a different unit or RFC")
 	}
 	ok = true
-	return &Store{db: db, rfc: rfc}, nil
+	return &Store{db: db}, nil
 }
 func (s *Store) Close() error { return s.db.Close() }
 
@@ -105,7 +96,7 @@ func makeUUID() string {
 
 // SaveWindow commits the entire batch and cursor together. Reading an older
 // window again can repair a previously invalid mapping without resending it.
-func (s *Store) SaveWindow(ctx context.Context, from, to time.Time, inputs []Input) error {
+func (s *Store) SaveWindow(ctx context.Context, from, to time.Time, inputs []domain.Input) error {
 	if from.Unix() < 0 || to.Before(from) {
 		return errors.New("invalid message window")
 	}
@@ -132,14 +123,14 @@ func (s *Store) SaveWindow(ctx context.Context, from, to time.Time, inputs []Inp
 			id = makeUUID()
 		case err != nil:
 			return err
-		case state != Invalid:
+		case state != domain.Invalid:
 			continue
 		}
 		body, validationErr := input.Build(id)
-		state, detail := Pending, ""
+		state, detail := domain.Pending, ""
 		if validationErr != nil {
 			// Validation messages from the local mapper name the missing fields.
-			state, detail, body = Invalid, validationErr.Error(), nil
+			state, detail, body = domain.Invalid, validationErr.Error(), nil
 		}
 		_, err = tx.ExecContext(ctx, `INSERT INTO reports(source_key,id,body,status,detail,updated,window_from,window_to) VALUES(?,?,?,?,?,?,?,?)
 ON CONFLICT(source_key) DO UPDATE SET body=excluded.body,status=excluded.status,detail=excluded.detail,updated=excluded.updated WHERE reports.status='invalid'`, input.Key, id, body, state, detail, time.Now().Unix(), from.Unix(), to.Unix())
@@ -155,8 +146,8 @@ ON CONFLICT(source_key) DO UPDATE SET body=excluded.body,status=excluded.status,
 
 // Mark the intention durably before the network call. A crash here leaves the
 // outcome uncertain; automatic replay could deliver a duplicate.
-func (s *Store) claim(ctx context.Context, now time.Time) (*envelope, error) {
-	var row envelope
+func (s *Store) Claim(ctx context.Context, now time.Time) (*domain.Envelope, error) {
+	var row domain.Envelope
 	err := s.db.QueryRowContext(ctx, `UPDATE reports SET status='uncertain',detail='delivery_started',updated=?
 WHERE rowid=(SELECT rowid FROM reports WHERE status='pending' AND retry_at<=?
 AND (SELECT cooldown FROM pilot WHERE instance=1)<=? ORDER BY rowid LIMIT 1)
@@ -170,14 +161,14 @@ RETURNING id,body`, now.Unix(), now.Unix(), now.Unix()).Scan(&row.ID, &row.Body)
 	return &row, nil
 }
 
-func (s *Store) finish(ctx context.Context, id string, out Outcome) error {
+func (s *Store) Finish(ctx context.Context, id string, out domain.Outcome) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 	retry := int64(0)
-	if out.State == Pending {
+	if out.State == domain.Pending {
 		retry = out.RetryAt.Unix()
 		if _, err = tx.ExecContext(ctx, "UPDATE pilot SET cooldown=MAX(cooldown,?) WHERE instance=1", retry); err != nil {
 			return err
@@ -195,25 +186,6 @@ func (s *Store) finish(ctx context.Context, id string, out Outcome) error {
 		return errors.New("delivery state has changed")
 	}
 	return tx.Commit()
-}
-
-func (s *Store) Deliver(ctx context.Context, sender Sender) error {
-	for {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-		row, err := s.claim(ctx, time.Now())
-		if err != nil || row == nil {
-			return err
-		}
-		out := sender.Send(ctx, s.rfc, row.Body)
-		if err = s.finish(ctx, row.ID, out); err != nil {
-			return err
-		}
-		if out.State == Pending {
-			return nil
-		}
-	}
 }
 
 func (s *Store) Counts(ctx context.Context) (map[string]int, error) {

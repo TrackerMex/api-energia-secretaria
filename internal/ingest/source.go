@@ -1,4 +1,4 @@
-// Package ingest reads Wialon GPS messages and maps positions to SENER's schema.
+// Package ingest reads Wialon GPS messages for the single-unit pilot.
 package ingest
 
 import (
@@ -16,19 +16,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"wialon-sener-pilot/internal/domain"
 )
 
 type Source struct {
 	BaseURL string
 	Token   string
 	Client  *http.Client
-}
-
-// Position retains the original message so validation failures can be reconciled.
-type Position struct {
-	Key     string
-	UnitID  int64
-	Message json.RawMessage
 }
 
 type session struct {
@@ -125,7 +120,7 @@ func (s *session) call(ctx context.Context, svc string, params any, out any) err
 }
 
 // Positions loads one unit's inclusive, whole-second Wialon interval.
-func (s Source) Positions(ctx context.Context, unitID int64, from, to time.Time) ([]Position, error) {
+func (s Source) Positions(ctx context.Context, unitID int64, from, to time.Time) ([]domain.Position, error) {
 	if unitID <= 0 || from.Unix() < 0 || to.Before(from) || to.Unix() > math.MaxUint32 {
 		return nil, errors.New("unidad o intervalo UTC inválido")
 	}
@@ -153,7 +148,7 @@ func (s Source) Positions(ctx context.Context, unitID int64, from, to time.Time)
 	if first.Count == nil || *first.Count < 0 || first.Messages == nil || len(first.Messages) > *first.Count {
 		return nil, errors.New("messages/load_interval: conteo o página inválidos")
 	}
-	var positions []Position
+	var positions []domain.Position
 	page := first.Messages
 	for {
 		for _, raw := range page {
@@ -178,21 +173,21 @@ func (s Source) Positions(ctx context.Context, unitID int64, from, to time.Time)
 	}
 }
 
-func newPosition(unitID int64, raw json.RawMessage) (Position, error) {
+func newPosition(unitID int64, raw json.RawMessage) (domain.Position, error) {
 	// Sort object keys recursively without rounding device identifiers or counters.
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
 	var data map[string]any
 	if err := decoder.Decode(&data); err != nil || data == nil {
-		return Position{}, errors.New("mensaje Wialon inválido")
+		return domain.Position{}, errors.New("mensaje Wialon inválido")
 	}
 	// Loader metadata is not a part of the device reading.
 	delete(data, "sensors")
 	canonical, err := json.Marshal(data)
 	if err != nil {
-		return Position{}, errors.New("contenido de mensaje Wialon inválido")
+		return domain.Position{}, errors.New("contenido de mensaje Wialon inválido")
 	}
 	digest := sha256.Sum256(canonical)
 	key := strconv.FormatInt(unitID, 10) + ":" + fmt.Sprintf("%x", digest)
-	return Position{Key: key, UnitID: unitID, Message: raw}, nil
+	return domain.Position{Key: key, UnitID: unitID, Message: raw}, nil
 }

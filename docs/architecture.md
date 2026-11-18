@@ -1,14 +1,17 @@
 # Arquitectura del piloto
 
-El comando Go sirve a una sola unidad. En desarrollo consulta Wialon y envía a SENER mediante HTTPS saliente. La prueba local usa dos servidores simulados y una base temporal.
+La prueba local recorre Wialon simulado, el caso de uso de una unidad, SQLite temporal y SENER simulado. El comando de desarrollo compone los mismos adaptadores para conexiones salientes HTTPS.
 
 | Código | Responsabilidad |
 |---|---|
-| `internal/ingest/source.go` | Autenticación, consulta de una ventana, lectura paginada y cierre de la sesión Wialon. |
-| `internal/ingest/report.go` | Transformación y validación del mensaje, la ficha y los catálogos SENER. La función `Report` opera con datos en memoria. |
-| `internal/delivery/` | Almacenamiento SQLite, transición de estados de entrega y preparación de multipart para SENER desarrollo. |
-| `cmd/piloto/` | Selección de modo, configuración de una unidad y coordinación del recorrido completo. |
+| `internal/domain/ports.go` | Tipos de posición y entrega. Contratos `PositionSource`, `Outbox` y `ReportSender`. |
+| `internal/domain/report.go` | Ficha de unidad, validación de señales y catálogos, transformación de una posición al JSON de SENER en memoria. |
+| `internal/application/pilot.go` | `RunWindow` lee la unidad, prepara los reportes con identidades duraderas y ordena el envío. `DeliverPending` procesa los resultados mediante los contratos de dominio. |
+| `internal/ingest/source.go` | Adaptador HTTP de Wialon Remote API con autenticación, paginación y cierre de sesión. |
+| `internal/delivery/store.go` | Adaptador SQLite que actualiza el cursor y la cola en una transacción y persiste el resultado de cada intento. |
+| `internal/delivery/sener.go` | Adaptador multipart HTTPS que traduce la respuesta de SENER a un resultado de entrega. |
+| `cmd/piloto/` | Carga el perfil privado, configura el modo, compone los adaptadores y programa las ventanas UTC. |
 
-El cursor y la cola se actualizan en la misma transacción. Un reporte aceptado requiere HTTP 200 con `error: 0`. Antes del envío se conserva el UUID y se registra la intención de entrega. Si se pierde la respuesta, la transmisión queda identificada para conciliación.
+La aplicación importa únicamente el dominio y la biblioteca estándar de Go. Los adaptadores implementan los contratos del dominio. El piloto conserva el UUID antes del POST. Un HTTP 200 con `error: 0` confirma la aceptación. Una entrega de resultado incierto queda pendiente de conciliación.
 
 [Formato Wialon](https://help.wialon.com/en/api/user-guide/api-reference/messages/load_interval) · [Manuales de SENER revisados](frecuencia-sener.md)

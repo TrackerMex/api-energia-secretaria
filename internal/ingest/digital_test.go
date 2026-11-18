@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"wialon-sener-pilot/internal/domain"
 )
 
 func TestR3VerifiedDigitalInput(t *testing.T) {
@@ -23,7 +25,7 @@ func TestR3VerifiedDigitalInput(t *testing.T) {
 			profile := demoProfile(t)
 			profile.IgnitionParam = tc.selector
 			reading := strings.Replace(sample, `"f":3`, tc.flagsAndInput, 1)
-			data, err := Report(Position{UnitID: 7, Message: json.RawMessage(reading)}, profile, "00000000-0000-4000-8000-000000000001")
+			data, err := domain.Report(domain.Position{UnitID: 7, Message: json.RawMessage(reading)}, profile, "00000000-0000-4000-8000-000000000001")
 			if !tc.valid {
 				if err == nil {
 					t.Fatal("accepted unknown input")
@@ -33,11 +35,17 @@ func TestR3VerifiedDigitalInput(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			var report envelope
+			var report struct {
+				Data []struct {
+					Status struct {
+						Ignition bool `json:"motor_encendido"`
+					} `json:"estado_vehiculo"`
+				} `json:"data"`
+			}
 			if err := json.Unmarshal(data, &report); err != nil {
 				t.Fatal(err)
 			}
-			if report.Data[0].Status.Ignition != tc.on {
+			if len(report.Data) != 1 || report.Data[0].Status.Ignition != tc.on {
 				t.Errorf("ignition should be %t", tc.on)
 			}
 		})

@@ -14,23 +14,11 @@ import (
 	"regexp"
 	"strconv"
 	"time"
+
+	"wialon-sener-pilot/internal/domain"
 )
 
 const DevelopmentURL = "https://dev-api.energia.gob.mx/api/v1/telemetria/reporte/"
-
-const (
-	Pending   = "pending"
-	Accepted  = "accepted"
-	Rejected  = "rejected"
-	Uncertain = "uncertain"
-	Invalid   = "invalid"
-)
-
-type Outcome struct {
-	State   string
-	Detail  string
-	RetryAt time.Time
-}
 
 type Sender struct {
 	URL    string
@@ -38,7 +26,7 @@ type Sender struct {
 	Client *http.Client
 }
 
-func (s Sender) Send(ctx context.Context, rfc string, body []byte) Outcome {
+func (s Sender) Send(ctx context.Context, rfc string, body []byte) domain.Outcome {
 	var buf bytes.Buffer
 	form := multipart.NewWriter(&buf)
 	header := make(textproto.MIMEHeader)
@@ -46,17 +34,17 @@ func (s Sender) Send(ctx context.Context, rfc string, body []byte) Outcome {
 	header.Set("Content-Type", "application/json")
 	part, err := form.CreatePart(header)
 	if err != nil {
-		return Outcome{State: Rejected, Detail: "multipart_header"}
+		return domain.Outcome{State: domain.Rejected, Detail: "multipart_header"}
 	}
 	if _, err = part.Write(body); err != nil {
-		return Outcome{State: Rejected, Detail: "multipart_body"}
+		return domain.Outcome{State: domain.Rejected, Detail: "multipart_body"}
 	}
 	if err = form.Close(); err != nil {
-		return Outcome{State: Rejected, Detail: "multipart_close"}
+		return domain.Outcome{State: domain.Rejected, Detail: "multipart_close"}
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.URL, &buf)
 	if err != nil {
-		return Outcome{State: Rejected, Detail: "endpoint"}
+		return domain.Outcome{State: domain.Rejected, Detail: "endpoint"}
 	}
 	req.Header.Set("Content-Type", form.FormDataContentType())
 	req.Header.Set("Accept", "application/json")
@@ -71,35 +59,35 @@ func (s Sender) Send(ctx context.Context, rfc string, body []byte) Outcome {
 	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := client.Do(req)
 	if err != nil {
-		return Outcome{State: Uncertain, Detail: "transport"}
+		return domain.Outcome{State: domain.Uncertain, Detail: "transport"}
 	}
 	defer resp.Body.Close()
 	switch {
 	case resp.StatusCode == http.StatusTooManyRequests:
-		return Outcome{State: Pending, Detail: "HTTP 429", RetryAt: retryTime(time.Now(), resp.Header.Get("Retry-After"))}
+		return domain.Outcome{State: domain.Pending, Detail: "HTTP 429", RetryAt: retryTime(time.Now(), resp.Header.Get("Retry-After"))}
 	case resp.StatusCode == 401 || resp.StatusCode == 403 || resp.StatusCode == 404 || resp.StatusCode == 405:
-		return Outcome{State: Pending, Detail: fmt.Sprintf("HTTP %d", resp.StatusCode), RetryAt: time.Now().Add(5 * time.Minute)}
+		return domain.Outcome{State: domain.Pending, Detail: fmt.Sprintf("HTTP %d", resp.StatusCode), RetryAt: time.Now().Add(5 * time.Minute)}
 	case resp.StatusCode >= 400 && resp.StatusCode < 500 && resp.StatusCode != http.StatusRequestTimeout:
 		detail := fmt.Sprintf("HTTP %d", resp.StatusCode)
 		var result apiResult
 		if result.read(resp.Body) == nil {
 			detail += result.code(s.Token)
 		}
-		return Outcome{State: Rejected, Detail: detail}
+		return domain.Outcome{State: domain.Rejected, Detail: detail}
 	case resp.StatusCode != http.StatusOK:
-		return Outcome{State: Uncertain, Detail: fmt.Sprintf("HTTP %d", resp.StatusCode)}
+		return domain.Outcome{State: domain.Uncertain, Detail: fmt.Sprintf("HTTP %d", resp.StatusCode)}
 	}
 	var result apiResult
 	if result.read(resp.Body) != nil || result.Error == nil {
-		return Outcome{State: Uncertain, Detail: "invalid_response"}
+		return domain.Outcome{State: domain.Uncertain, Detail: "invalid_response"}
 	}
 	switch *result.Error {
 	case 0:
-		return Outcome{State: Accepted, Detail: "HTTP 200 error=0"}
+		return domain.Outcome{State: domain.Accepted, Detail: "HTTP 200 error=0"}
 	case 1:
-		return Outcome{State: Rejected, Detail: "HTTP 200 error=1" + result.code(s.Token)}
+		return domain.Outcome{State: domain.Rejected, Detail: "HTTP 200 error=1" + result.code(s.Token)}
 	default:
-		return Outcome{State: Uncertain, Detail: "unknown_error_flag"}
+		return domain.Outcome{State: domain.Uncertain, Detail: "unknown_error_flag"}
 	}
 }
 
