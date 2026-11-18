@@ -65,6 +65,40 @@ func completion(t *testing.T, ch <-chan error) error {
 	}
 }
 
+// A third-party receiver consumes the one-way stream before closing its socket.
+func finishStream(t *testing.T, c net.Conn) {
+	t.Helper()
+	if err := c.(*net.TCPConn).CloseWrite(); err != nil {
+		t.Fatal(err)
+	}
+	reply, err := io.ReadAll(c)
+	if err != nil || len(reply) != 0 {
+		t.Fatalf("unexpected server reply %x: %v", reply, err)
+	}
+}
+
+func TestR2OneWaySenderClosesWithoutReading(t *testing.T) {
+	source, receiver := net.Pipe()
+	defer source.Close()
+	if err := source.SetWriteDeadline(time.Now().Add(2 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	done := make(chan error, 1)
+	go func() {
+		done <- receive(context.Background(), receiver, func(context.Context, domain.GPSFix) error { count++; return nil })
+	}()
+	data := example(t)
+	_, err := source.Write(bytes.Repeat(data, 3))
+	source.Close()
+	if stopErr := completion(t, done); stopErr != nil {
+		t.Fatal(stopErr)
+	}
+	if err != nil || count != 3 {
+		t.Fatalf("sender delivered %d of 3 frames: %v", count, err)
+	}
+}
+
 func TestR2OfficialPacket(t *testing.T) {
 	b := example(t)
 	fix, present, err := decodeFrame(b)
@@ -100,9 +134,9 @@ func TestR2FragmentedAndCoalesced(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	var ack [2]byte
-	if _, err := io.ReadFull(c, ack[:]); err != nil || ack != [2]byte{0x11, 0x11} {
-		t.Fatalf("ack %x: %v", ack, err)
+	finishStream(t, c)
+	if len(received) != 2 {
+		t.Fatalf("received %d frames", len(received))
 	}
 	a, b := <-received, <-received
 	if a.Fingerprint == b.Fingerprint || !a.GPSTime.Equal(b.GPSTime) {
@@ -118,11 +152,12 @@ func TestR5InvalidAndNonPositionFrames(t *testing.T) {
 	valid := example(t)
 	posOffset := bytes.Index(valid, []byte("posinfo\x00")) + len("posinfo\x00")
 	for name, alter := range map[string]func([]byte){
-		"longitude":      func(f []byte) { binary.LittleEndian.PutUint64(f[posOffset:], math.Float64bits(181)) },
-		"latitude":       func(f []byte) { binary.LittleEndian.PutUint64(f[posOffset+8:], math.Float64bits(-91)) },
-		"nan":            func(f []byte) { binary.LittleEndian.PutUint64(f[posOffset:], math.Float64bits(math.NaN())) },
-		"course":         func(f []byte) { binary.BigEndian.PutUint16(f[posOffset+26:], 360) },
-		"block boundary": func(f []byte) { binary.BigEndian.PutUint32(f[30:], 0xffff) },
+		"longitude":          func(f []byte) { binary.LittleEndian.PutUint64(f[posOffset:], math.Float64bits(181)) },
+		"latitude":           func(f []byte) { binary.LittleEndian.PutUint64(f[posOffset+8:], math.Float64bits(-91)) },
+		"nan":                func(f []byte) { binary.LittleEndian.PutUint64(f[posOffset:], math.Float64bits(math.NaN())) },
+		"course":             func(f []byte) { binary.BigEndian.PutUint16(f[posOffset+26:], 360) },
+		"location bit clear": func(f []byte) { binary.BigEndian.PutUint32(f[24:], 2) },
+		"block boundary":     func(f []byte) { binary.BigEndian.PutUint32(f[30:], 0xffff) },
 	} {
 		t.Run(name, func(t *testing.T) {
 			frame := bytes.Clone(valid)
@@ -162,9 +197,7 @@ func TestR5PeerIsolationAndIdleShutdown(t *testing.T) {
 	if _, err := c.Write(full); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := io.ReadFull(c, make([]byte, 1)); err != nil {
-		t.Fatal(err)
-	}
+	finishStream(t, c)
 	idle := client(t, ln)
 	if _, err := idle.Write(full[:2]); err != nil {
 		t.Fatal(err)
@@ -196,6 +229,6 @@ func TestR5StorageFailureIsReturned(t *testing.T) {
 		t.Fatalf("lost storage error: %v", err)
 	}
 	if n, _ := c.Read(make([]byte, 1)); n != 0 {
-		t.Fatal("acknowledged an uncommitted position")
+		t.Fatal("third-party receiver should emit no payload")
 	}
 }
