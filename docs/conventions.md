@@ -15,3 +15,5 @@ Usamos UTC para tiempos del GPS y de entrega. Los identificadores de unidad de W
 | `WIALON_POLL_INTERVAL` | Tiempo entre consultas. Su valor es una decisión operativa del piloto. |
 
 El arranque local del harness y los tests usan datos ficticios. Para la prueba real se definen los secretos fuera del repositorio. Los logs de aplicación deben registrar el ID de transmisión y el resultado, con las credenciales y los datos personales excluidos.
+
+La unidad systemd usa también WIALON_START_UTC para definir el instante inicial en UTC en su primera ejecución periódica.

@@ -1,0 +1,23 @@
+[Unit]
+Description=Piloto de posiciones Wialon a SENER desarrollo
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=wialon-sener
+Group=wialon-sener
+EnvironmentFile=/etc/wialon-sener/pilot.env
+ExecStart=/opt/wialon-sener/piloto -environment development -profile /etc/wialon-sener/profile.json -db /var/lib/wialon-sener/pilot.db -watch -from ${WIALON_START_UTC}
+Restart=on-failure
+RestartSec=30
+StateDirectory=wialon-sener
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target
