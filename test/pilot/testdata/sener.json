@@ -1,0 +1,33 @@
+{
+  "rfc": "XAXX010101000",
+  "razon_social": "PERMISIONARIO FICTICIO",
+  "data": [
+    {
+      "id_transmision": "00000000-0000-4000-8000-000000000001",
+      "timestamp_gps": "2025-10-24T12:00:00Z",
+      "tipo_reporte": "posicion",
+      "vehiculo": {
+        "id_unidad": "DEMO-01",
+        "numero_permiso": "PERMISO-FICTICIO",
+        "placa": "DEMO001",
+        "vin": "DEMX0000000000001",
+        "tipo_carga": "M",
+        "tipo_vehiculo": "A"
+      },
+      "geolocalizacion": {
+        "latitud": 20,
+        "longitud": -100,
+        "direccion_grados": 90
+      },
+      "estado_vehiculo": {
+        "velocidad_kmh": 0,
+        "motor_encendido": true
+      },
+      "estado_dispositivo_gps": {
+        "estado_conexion": "conectado",
+        "imei": "000000000000000"
+      },
+      "sensores_adicionales": {}
+    }
+  ]
+}

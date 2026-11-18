@@ -1,0 +1,14 @@
+[
+  {
+    "id": 1,
+    "name": "piloto-una-unidad",
+    "status": "in_progress",
+    "priority": "P1",
+    "description": "Leer con Wialon Remote API los mensajes de una única unidad, convertir posiciones al contrato SENER y probar entregas recuperables en desarrollo.",
+    "acceptance_criteria": [
+      "La prueba local usa servidores simulados y datos sintéticos de una unidad.",
+      "El emisor distingue aceptación, rechazo y entrega incierta, y conserva el reporte tras reiniciar.",
+      "El intervalo de consulta se configura independientemente de cualquier plazo de SENER."
+    ]
+  }
+]
