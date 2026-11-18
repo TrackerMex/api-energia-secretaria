@@ -1,6 +1,6 @@
 ---
 feature: receptor-tcp-cr13
-status: draft
+status: approved
 tags: [harness, spec]
 ---
 
@@ -23,4 +23,4 @@ La conexión de CR-13 real, el despliegue en Hostinger, la activación para las 
 
 ## Aprobación
 
-- [ ] Aprobado por humano (fecha: ____-__-__)
+- [x] Aprobado por humano (fecha: 2026-11-18)

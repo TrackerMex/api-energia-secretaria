@@ -2,7 +2,7 @@
 
 **Última actualización**: 2026-11-18
 **Features completadas**: 1/2 (`feature_list.json`)
-**Pendientes**: borrador de requisitos del receptor TCP para CR-13 y su historial local
+**Pendientes**: implementación del receptor TCP para CR-13 y su historial local
 **En producción**: no
 
 ## Estado actual

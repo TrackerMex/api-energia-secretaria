@@ -14,7 +14,7 @@
   {
     "id": 2,
     "name": "receptor-tcp-cr13",
-    "status": "pending",
+    "status": "in_progress",
     "priority": "P1",
     "description": "Recibir Wialon Retranslator por TCP en Go y conservar en SQLite un historial local de la unidad piloto CR-13.",
     "acceptance_criteria": [
