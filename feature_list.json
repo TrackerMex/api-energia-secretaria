@@ -10,5 +10,17 @@
       "El emisor distingue aceptación, rechazo y entrega incierta, y conserva el reporte tras reiniciar.",
       "El intervalo de consulta se configura independientemente de cualquier plazo de SENER."
     ]
+  },
+  {
+    "id": 2,
+    "name": "receptor-tcp-cr13",
+    "status": "pending",
+    "priority": "P1",
+    "description": "Recibir Wialon Retranslator por TCP en Go y conservar en SQLite un historial local de la unidad piloto CR-13.",
+    "acceptance_criteria": [
+      "Un emisor simulado alcanza el receptor por loopback y la identidad configurada se valida antes de guardar.",
+      "Las posiciones se recuperan por hora GPS, incluidos datos históricos y retransmisiones, sin duplicar registros.",
+      "Una prueba local recupera el historial después de reiniciar. El flujo de entrega de SENER es independiente."
+    ]
   }
 ]

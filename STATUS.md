@@ -1,13 +1,15 @@
 # Piloto Wialon–SENER
 
 **Última actualización**: 2026-11-18
-**Features completadas**: 1/1 (`feature_list.json`)
-**Pendientes**: prueba externa diferida por decisión del usuario
+**Features completadas**: 1/2 (`feature_list.json`)
+**Pendientes**: borrador de requisitos del receptor TCP para CR-13 y su historial local
 **En producción**: no
 
 ## Estado actual
 
 El piloto de una unidad está implementado y aprobado en local. La verificación usó Wialon y SENER simulados en loopback, SQLite temporal y datos ficticios. Se probaron paginación, mapeo, validación, multipart, recuperación tras reinicio y repetición de una ventana ya aceptada.
+
+La siguiente fase elegida es recibir Wialon Retranslator por TCP y guardar el historial de CR-13. Se desarrollará primero con paquetes sintéticos en este equipo.
 
 ## Última sesión
 
