@@ -8,7 +8,7 @@ tags: [harness, spec]
 
 | Requisito | Test (archivo::nombre) | Commit |
 |---|---|---|
-| R1 | cmd/observar/main_test.go::TestR1InclusiveSecondAndFailedPage y TestR4ObservationReadOnly | 2b0be7e selecciona la unidad, valida segundos UTC inclusivos y espera todas las páginas |
+| R1 | cmd/observar/main_test.go::TestR1InclusiveSecondAndFailedPage, TestR1ExactUTCSecondBeforeLogin y TestR4ObservationReadOnly | 2b0be7e selecciona la unidad, valida segundos UTC inclusivos y espera todas las páginas. 527f643 valida la precisión escrita antes de abrir sesión |
 | R2 | internal/domain/observation_test.go::TestR2ObservationClassifiesSameMessage | d618182 clasifica cada mensaje con la entrada digital y las RPM de esa posición |
 | R3 | internal/domain/observation_test.go::TestR3ObservationCountsPositionsAndExplainsReasons y TestR3EmptyObservationKeepsStableJSON. cmd/observar/main_test.go::TestR3PrivateFailuresAndRedirect | d618182 y 2b0be7e agregan resultados y omiten datos individuales de las salidas |
 | R4 | cmd/observar/main_test.go::TestR4ObservationReadOnly | 2b0be7e compone exclusivamente la lectura Wialon y la clasificación de dominio |
