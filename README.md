@@ -12,7 +12,7 @@ go test -count=1 -v ./cmd/tcp-sener -run '^TestR5TCPToSENERLocal$'
 
 La prueba abre sus propios puertos de loopback y bases SQLite temporales. Entrega una posición ficticia al receptor TCP, procesa el intervalo del historial y comprueba el archivo JSON recibido por el simulador. Tras reiniciar y retransmitir, el resultado esperado es **una posición, un reporte aceptado y un solo POST**.
 
-La ficha de captura identifica el UID y las señales históricas de ignición y conexión del GPS. Un cero medido es válido. Una lectura desconocida o ausente deja la posición en el historial y registra el motivo en la cola. Las posiciones antiguas que carecen de estas mediciones siguen siendo consultables. [Ficha del ensayo](testdata/tcp-sener/profile.json) · [Requisitos de la prueba integrada](specs/tcp-sener-local/requirements.md)
+La ficha de captura identifica el UID y las señales históricas de ignición y conexión del GPS. Un cero medido es válido. Una lectura desconocida o ausente deja la posición en el historial y registra el motivo en la cola. Las posiciones antiguas que carecen de estas mediciones siguen siendo consultables. Si la trama original vuelve a llegar con una ficha que permite leer las señales faltantes, vuelve a procesar su intervalo. La cola podrá usar el mismo identificador del reporte para la primera entrega válida. [Ficha del ensayo](testdata/tcp-sener/profile.json) · [Requisitos de la prueba integrada](specs/tcp-sener-local/requirements.md)
 
 Para procesar un intervalo con un simulador HTTP propio ya en marcha, inicia la captura con `-profile` y usa la misma ficha al procesar el historial. En una segunda terminal, ajusta el puerto del simulador y las dos fechas al ensayo. El ejemplo utiliza archivos distintos para la captura y para la cola.
 
