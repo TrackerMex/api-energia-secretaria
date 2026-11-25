@@ -12,3 +12,17 @@ Se consulta la ventana inclusiva en segundos UTC, seleccionando mensajes de dato
 - [Inicio de sesión](https://help.wialon.com/en/api/user-guide/api-reference/token/login)
 - [Carga por intervalo](https://help.wialon.com/en/api/user-guide/api-reference/messages/load_interval)
 - [Paginación por índice](https://help.wialon.com/en/api/user-guide/api-reference/messages/get_messages)
+
+## Criterio de observación para CR-13
+
+La fuente acordada es la API de Wialon. Para el motor se contrastan, en el mismo mensaje de la unidad, el estado de la entrada digital 1 (sensor `Ignicion`) y las revoluciones del motor (sensor `RPM`, parámetro `can_rpm / 10`). Este criterio guía la validación antes de usarlo en entregas reales.
+
+| Evidencia del mismo mensaje | Resultado de observación |
+|---|---|
+| Entrada 1 activa y RPM válidas mayores que cero | Encendido según la telemetría |
+| Entrada 1 inactiva y RPM válidas iguales a cero | Apagado según la telemetría |
+| Las lecturas se contradicen, falta una de ellas o su valor es inválido | Indeterminado, con el motivo registrado al evaluar la muestra |
+
+Para leer la entrada 1 en el mensaje de Remote API hay que comprobar la bandera `0x02` de `f` y luego el primer bit de `i`. Un intervalo calculado de ignición puede servir para contrastar tendencias. Por sí solo no demuestra qué valor contenía una trama individual. La referencia temporal es la hora GPS del mensaje. [Formato de mensajes de Wialon](https://help.wialon.com/en/api/user-guide/data-format/messages)
+
+La conexión del GPS se evalúa por separado. Hasta identificar y validar una señal explícita en el mensaje histórico de CR-13, el estado de conexión queda indeterminado y la posición queda pendiente de entrega real a SENER.

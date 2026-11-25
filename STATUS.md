@@ -13,6 +13,8 @@ El piloto local en Go recibe posiciones de Wialon Retranslator por TCP, conserva
 
 El usuario aprobó los cinco requisitos de integración para `DEMO-CR13`. El ensayo completo comprobó la recepción TCP, la persistencia, el multipart y la aceptación por un simulador en loopback. Tras reiniciar y repetir la trama, el resultado fue una posición, un reporte aceptado y un POST. Un ensayo adicional con una segunda posición sin señales confirmó que queda pendiente de corrección. La revisión también verificó que retransmitir una trama antigua con mediciones disponibles permite completar su reporte con el UUID original. [Guía para repetir la prueba](README.md) · [Revisión independiente](progress/review_tcp-sener-local.md)
 
+El usuario eligió la API de Wialon como fuente de validación para CR-13. En observación se contrastarán la ignición y las RPM del mismo mensaje. La conexión histórica del GPS permanece pendiente de comprobar. [Criterio para interpretar las señales](internal/ingest/README.md#criterio-de-observación-para-cr-13)
+
 ## Para retomar la prueba real
 
 El UID indicado por el operador se conservó en su configuración local privada. Al habilitar el retransmisor habrá que comprobar el identificador de salida, la procedencia y el significado de las señales históricas en el equipo real, la ficha del permisionario, el acceso al entorno de desarrollo de SENER y la frecuencia operativa. El despliegue en el VPS y las once unidades forman parte de una etapa posterior. [Configuración del piloto Remote API](deploy/README.md) · [Revisión de los manuales](docs/frecuencia-sener.md)
