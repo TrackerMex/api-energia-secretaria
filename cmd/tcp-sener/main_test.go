@@ -30,6 +30,9 @@ import (
 const uid = "DEMO-CR13"
 const profilePath = "../../testdata/tcp-sener/profile.json"
 
+// Independent wire vector: posinfo followed by int32 sensors ign=0 and online=1.
+const wireFixture = "6200000044454d4f2d435231330068fb6a4000000003" + "0bbb000000270102706f73696e666f0000000000000059c000000000000034400000000000209c40002a005a09" + "0bbb0000000a010369676e0000000000" + "0bbb0000000d01036f6e6c696e650000000001"
+
 var start = time.Date(2025, 10, 24, 12, 0, 0, 0, time.UTC)
 
 type fixture struct{ history, outbox string }
@@ -366,8 +369,7 @@ func TestR5TCPToSENERLocal(t *testing.T) {
 		cmd.Env = append(os.Environ(), "WIALON_TOKEN=", "SENER_DEV_TOKEN=")
 		return cmd
 	}
-	// Independent wire vector: posinfo followed by named int32 sensors ign=0 and online=1.
-	wire, e := hex.DecodeString("6200000044454d4f2d435231330068fb6a4000000003" + "0bbb000000270102706f73696e666f0000000000000059c000000000000034400000000000209c40002a005a09" + "0bbb0000000a010369676e0000000000" + "0bbb0000000d01036f6e6c696e650000000001")
+	wire, e := hex.DecodeString(wireFixture)
 	if e != nil {
 		t.Fatal(e)
 	}
