@@ -1,8 +1,8 @@
 # Piloto Wialon–SENER
 
 **Última actualización**: 2026-11-25
-**Features completadas**: 3/3 (`feature_list.json`)
-**Pendientes**: comprobar la captura real de CR-13 y preparar la prueba en SENER desarrollo
+**Features completadas**: 3/4 (`feature_list.json`)
+**Pendientes**: implementación del modo de observación de Wialon y validación de conectividad antes de la prueba en SENER desarrollo
 **En producción**: no
 
 ## Estado actual

@@ -34,5 +34,17 @@
       "Se conserva el motivo si falta una señal obligatoria, incluso en el historial creado antes de esta fase.",
       "Al reiniciar y retransmitir una trama ya aceptada se conserva una sola posición y una sola entrega aceptada."
     ]
+  },
+  {
+    "id": 4,
+    "name": "observacion-api-cr13",
+    "status": "in_progress",
+    "priority": "P1",
+    "description": "Contrastar ignición y RPM de cada posición de una unidad con Wialon Remote API en modo de observación.",
+    "acceptance_criteria": [
+      "El comando de observación lee una unidad y una ventana de Wialon mediante el adaptador existente, con un simulador para la prueba local.",
+      "Clasifica el motor usando in1 y can_rpm del mismo mensaje. Las discrepancias y los valores ausentes o inválidos conservan un motivo.",
+      "El resumen distingue el resultado del motor de la conectividad GPS pendiente de validación y opera sin enviar reportes a SENER."
+    ]
   }
 ]
