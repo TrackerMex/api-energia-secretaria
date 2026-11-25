@@ -1,0 +1,11 @@
+# Implementación de la observación de CR-13
+
+`cmd/observar` exige `-from` y `-to` en UTC. Ambos extremos se incluyen y pueden coincidir. El comando obtiene el ID interno autorizado, el origen HTTPS y el token de lectura de las tres variables Wialon usadas por el piloto. El adaptador existente realiza el inicio de sesión, consulta las páginas de posiciones y cierra la sesión. Las entidades responsables de SQLite y de la entrega a SENER quedan fuera del caso de uso.
+
+El clasificador cuenta una posición por mensaje leído. Dos mensajes que contienen lecturas idénticas pueden corresponder a dos entradas de Wialon y conservan sus respectivos conteos. En cada posición se compara la entrada digital 1 con las RPM de ese mismo mensaje. La salida JSON expone el total, las tres clases, los motivos y su criterio de conteo. La conexión histórica del GPS figura como pendiente de validación. Una consulta fallida sale con error antes de escribir un resumen.
+
+La prueba mixta ejercitó el punto de entrada ordinario con credenciales ficticias y dos páginas de un servidor HTTPS de loopback. El resultado fue **4 posiciones, 1 encendido, 1 apagado y 2 indeterminados**. Una posición indeterminada presentó discrepancia y la otra careció de ambas señales. El servidor recibió únicamente `token/login`, `messages/load_interval`, `messages/get_messages` y `core/logout`.
+
+Las pruebas focalizadas de `cmd/observar` en la entrega integrada terminaron con código 0 en 1.746 s. La ventana vacía devolvió conteos en cero. Ante una página fallida, el adaptador cerró la sesión y el comando dejó la salida estándar vacía. Un origen que devolvió una redirección HTTP 307 no pudo transferir el token al segundo servidor. Las pruebas comprobaron también que los errores y el resumen omitieron datos individuales, coordenadas y credenciales ficticias.
+
+La implementación del comando está en `2b0be7e` y el clasificador en `d618182`. La verificación completa del harness corresponde a la revisión independiente de esta candidata. [Trazabilidad de R1 a R4](../specs/observacion-api-cr13/traceability.md)
