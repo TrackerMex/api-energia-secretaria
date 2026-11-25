@@ -86,7 +86,7 @@ func TestR2OneWaySenderClosesWithoutReading(t *testing.T) {
 	count := 0
 	done := make(chan error, 1)
 	go func() {
-		done <- receive(context.Background(), receiver, func(context.Context, domain.GPSFix) error { count++; return nil })
+		done <- receive(context.Background(), receiver, func(context.Context, domain.GPSFix) error { count++; return nil }, domain.Profile{})
 	}()
 	data := example(t)
 	_, err := source.Write(bytes.Repeat(data, 3))
@@ -101,7 +101,7 @@ func TestR2OneWaySenderClosesWithoutReading(t *testing.T) {
 
 func TestR2OfficialPacket(t *testing.T) {
 	b := example(t)
-	fix, present, err := decodeFrame(b)
+	fix, present, err := decodeWithProfile(b, domain.Profile{})
 	if err != nil || !present {
 		t.Fatalf("position=%t: %v", present, err)
 	}
@@ -162,7 +162,7 @@ func TestR5InvalidAndNonPositionFrames(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			frame := bytes.Clone(valid)
 			alter(frame)
-			if _, present, err := decodeFrame(frame); err == nil || present {
+			if _, present, err := decodeWithProfile(frame, domain.Profile{}); err == nil || present {
 				t.Fatal("bad frame produced a position")
 			}
 		})
@@ -171,7 +171,7 @@ func TestR5InvalidAndNonPositionFrames(t *testing.T) {
 	ordinary := append(bytes.Clone(valid[:28]), valid[73:]...)
 	binary.LittleEndian.PutUint32(ordinary, uint32(len(ordinary)-4))
 	binary.BigEndian.PutUint32(ordinary[24:], 2)
-	if _, present, err := decodeFrame(ordinary); err != nil || present {
+	if _, present, err := decodeWithProfile(ordinary, domain.Profile{}); err != nil || present {
 		t.Fatalf("sensor frame: position=%t, err=%v", present, err)
 	}
 }

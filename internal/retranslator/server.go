@@ -13,6 +13,12 @@ import (
 // Serve owns listener. Context cancellation closes idle peers and waits for all
 // handlers. A storage failure stops the server and is returned to its caller.
 func Serve(parent context.Context, listener net.Listener, handle func(context.Context, domain.GPSFix) error) error {
+	return ServeWithProfile(parent, listener, handle, domain.Profile{})
+}
+
+// ServeWithProfile captures the selected measurements from each individual frame.
+// A zero profile preserves the receiver's position-only operation.
+func ServeWithProfile(parent context.Context, listener net.Listener, handle func(context.Context, domain.GPSFix) error, profile domain.Profile) error {
 	if listener == nil || handle == nil {
 		return errors.New("falta listener o manejador de posiciones")
 	}
@@ -31,7 +37,7 @@ func Serve(parent context.Context, listener net.Listener, handle func(context.Co
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			if err := receive(ctx, conn, handle); err != nil {
+			if err := receive(ctx, conn, handle, profile); err != nil {
 				cancel(fmt.Errorf("guardar posición Wialon: %w", err))
 			}
 		}()
@@ -44,7 +50,7 @@ func Serve(parent context.Context, listener net.Listener, handle func(context.Co
 	return cause
 }
 
-func receive(ctx context.Context, conn net.Conn, handle func(context.Context, domain.GPSFix) error) error {
+func receive(ctx context.Context, conn net.Conn, handle func(context.Context, domain.GPSFix) error, profile domain.Profile) error {
 	defer conn.Close()
 	stopClose := context.AfterFunc(ctx, func() { conn.Close() })
 	defer stopClose()
@@ -53,7 +59,7 @@ func receive(ctx context.Context, conn net.Conn, handle func(context.Context, do
 		if err != nil {
 			return nil
 		} // The stream ended or the next boundary is unknown.
-		fix, present, err := decodeFrame(frame)
+		fix, present, err := decodeWithProfile(frame, profile)
 		if err != nil {
 			continue
 		} // Complete frame: the following one starts at a known boundary.

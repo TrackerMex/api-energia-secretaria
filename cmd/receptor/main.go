@@ -20,6 +20,7 @@ import (
 	"wialon-sener-pilot/internal/domain"
 	"wialon-sener-pilot/internal/historydb"
 	"wialon-sener-pilot/internal/retranslator"
+	"wialon-sener-pilot/internal/unitprofile"
 )
 
 func main() {
@@ -40,9 +41,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 	flags.SetOutput(stderr)
 	uid := flags.String("uid", "", "UID ficticio autorizado del dispositivo CR-13")
 	database := flags.String("db", "", "ruta del archivo SQLite del historial")
-	var addr, from, to string
+	var addr, from, to, profilePath string
 	switch mode {
 	case "listen":
+		flags.StringVar(&profilePath, "profile", "", "ficha JSON con el UID y las fuentes de ignición y conexión")
 		flags.StringVar(&addr, "listen", "127.0.0.1:20163", "dirección y puerto de loopback")
 	case "history":
 		flags.StringVar(&from, "from", "", "inicio UTC incluido (RFC3339)")
@@ -62,6 +64,13 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 		if err != nil || !local.Addr().IsLoopback() {
 			return errors.New("-listen requiere una dirección IP de loopback y un puerto")
 		}
+		var profile domain.Profile
+		if profilePath != "" {
+			profile, err = unitprofile.LoadTCP(profilePath, *uid)
+			if err != nil {
+				return err
+			}
+		}
 		archive, err := historydb.OpenWriter(*database, *uid)
 		if err != nil {
 			return err
@@ -73,7 +82,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) error {
 			return err
 		}
 		fmt.Fprintln(stderr, "listening", listener.Addr())
-		return retranslator.Serve(ctx, listener, receiver.Accept)
+		return retranslator.ServeWithProfile(ctx, listener, receiver.Accept, profile)
 	}
 	var start, end time.Time
 	if mode == "history" {

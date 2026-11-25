@@ -1,0 +1,17 @@
+{
+  "wialon_unit_id": 7,
+  "rfc": "XAXX010101000",
+  "razon_social": "DEMO",
+  "vehiculo": {
+    "id_unidad": "CR-13",
+    "numero_permiso": "FICTICIO",
+    "placa": "DEMO001",
+    "vin": "DEMX0000000000001",
+    "tipo_carga": "M",
+    "tipo_vehiculo": "A"
+  },
+  "imei": "000000000000000",
+  "ignition_param": "ign",
+  "connection_param": "online",
+  "retranslator_uid": "DEMO-CR13"
+}

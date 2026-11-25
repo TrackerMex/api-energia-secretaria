@@ -17,7 +17,7 @@ func TestR1TCPProfileBindsUIDAndSelectors(t *testing.T) {
 	if _, err := LoadTCP(path, "OTHER"); err == nil {
 		t.Fatal("accepted other UID")
 	}
-	for _, invalid := range []string{"", "online", "digital:in0", "digital:in33", "digital:in01", "digital:out1", "posinfo"} {
+	for _, invalid := range []string{"", "online", "digital:in0", "digital:in33", "digital:in01", "digital:out1", "posinfo", "avl_inputs"} {
 		p.IgnitionParam = invalid
 		raw, err := json.Marshal(p)
 		if err != nil {

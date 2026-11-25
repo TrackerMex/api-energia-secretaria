@@ -6,4 +6,6 @@ Para producir una posición histórica, la trama debe indicar ubicación en el b
 
 Las tramas completas inválidas se descartan. Si una conexión termina con una trama parcial o anuncia un tamaño inválido, se cierra esa conexión. Un fallo de almacenamiento se devuelve al comando. La cancelación del comando cierra el listener y las conexiones pendientes.
 
+Con `listen -profile`, la ficha enlaza `retranslator_uid` con el UID autorizado y define `ignition_param` y `connection_param`. La ficha del ensayo usa los bloques sintéticos `ign` y `online`. Los parámetros con nombre admiten 0 y 1 numéricos o las cadenas `0`, `1`, `false` y `true`. Un selector entre `digital:in1` y `digital:in32` lee un bit del bloque entero `avl_inputs` si está presente el indicador de entradas digitales `0x2`. Los valores ausentes, ambiguos o inválidos se guardan como desconocidos. Cada fila conserva los nombres de los selectores para verificar con qué ficha se capturó. Al omitir `-profile` solo se registran los datos de posición.
+
 [Especificación de Wialon Retranslator 1.0](https://extapi.wialon.com/hw/cfg/WialonRetranslator%201.0_en.pdf)

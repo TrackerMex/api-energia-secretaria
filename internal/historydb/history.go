@@ -112,7 +112,34 @@ func (s *Store) initialize() error {
 	if err = s.verifyIdentity(tx.QueryRow("SELECT uid, alias FROM receiver_unit WHERE id=1")); err != nil {
 		return err
 	}
+	mapped, err := hasSignalColumns(context.Background(), tx)
+	if err != nil {
+		return err
+	}
+	if !mapped {
+		_, err = tx.Exec(`ALTER TABLE gps_fixes ADD COLUMN ignition INTEGER CHECK(ignition IN (0,1));
+ALTER TABLE gps_fixes ADD COLUMN connected INTEGER CHECK(connected IN (0,1));
+ALTER TABLE gps_fixes ADD COLUMN ignition_source TEXT NOT NULL DEFAULT '';
+ALTER TABLE gps_fixes ADD COLUMN connection_source TEXT NOT NULL DEFAULT '';`)
+		if err != nil {
+			return err
+		}
+	}
 	return tx.Commit()
+}
+
+// Inspect the schema in the same snapshot as the read or migration.
+func hasSignalColumns(ctx context.Context, tx *sql.Tx) (bool, error) {
+	var n int
+	err := tx.QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('gps_fixes')
+WHERE name IN ('ignition','connected','ignition_source','connection_source')`).Scan(&n)
+	if err != nil {
+		return false, err
+	}
+	if n != 0 && n != 4 {
+		return false, errors.New("esquema incompleto de señales del historial")
+	}
+	return n == 4, nil
 }
 
 func (s *Store) verifyIdentity(row *sql.Row) error {
@@ -132,8 +159,8 @@ func (s *Store) Save(ctx context.Context, fix domain.GPSFix) error {
 	if fix.UID != s.uid {
 		return errors.New("el UID de la posición difiere del configurado")
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO gps_fixes(uid,fingerprint,gps_sec,latitude,longitude,speed,course)
- VALUES(?,?,?,?,?,?,?) ON CONFLICT(uid,fingerprint) DO NOTHING`, fix.UID, fix.Fingerprint[:], fix.GPSTime.Unix(), fix.Latitude, fix.Longitude, fix.Speed, fix.Course)
+	_, err := s.db.ExecContext(ctx, `INSERT INTO gps_fixes(uid,fingerprint,gps_sec,latitude,longitude,speed,course,ignition,connected,ignition_source,connection_source)
+ VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(uid,fingerprint) DO NOTHING`, fix.UID, fix.Fingerprint[:], fix.GPSTime.Unix(), fix.Latitude, fix.Longitude, fix.Speed, fix.Course, fix.Ignition, fix.Connected, fix.IgnitionSource, fix.ConnectionSource)
 	return err
 }
 
@@ -143,7 +170,7 @@ func scanFix(row interface{ Scan(...any) error }) (domain.GPSFix, error) {
 	var fix domain.GPSFix
 	var hash []byte
 	var seconds int64
-	err := row.Scan(&fix.UID, &hash, &seconds, &fix.Latitude, &fix.Longitude, &fix.Speed, &fix.Course)
+	err := row.Scan(&fix.UID, &hash, &seconds, &fix.Latitude, &fix.Longitude, &fix.Speed, &fix.Course, &fix.Ignition, &fix.Connected, &fix.IgnitionSource, &fix.ConnectionSource)
 	if err != nil {
 		return fix, err
 	}
@@ -159,15 +186,11 @@ func (s *Store) Latest(ctx context.Context, uid string) (*domain.GPSFix, error) 
 	if uid != s.uid {
 		return nil, errors.New("el UID consultado difiere del configurado")
 	}
-	row := s.db.QueryRowContext(ctx, "SELECT "+columns+" FROM gps_fixes WHERE uid=? ORDER BY gps_sec DESC,fingerprint DESC LIMIT 1", uid)
-	fix, err := scanFix(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
+	fixes, err := s.readFixes(ctx, "WHERE uid=? ORDER BY gps_sec DESC,fingerprint DESC LIMIT 1", uid)
+	if err != nil || len(fixes) == 0 {
 		return nil, err
 	}
-	return &fix, nil
+	return &fixes[0], nil
 }
 
 // Wialon timestamps are whole seconds, so both fractional endpoints round up
@@ -183,7 +206,24 @@ func (s *Store) Between(ctx context.Context, uid string, from, to time.Time) ([]
 	if uid != s.uid {
 		return nil, errors.New("el UID consultado difiere del configurado")
 	}
-	rows, err := s.db.QueryContext(ctx, "SELECT "+columns+" FROM gps_fixes WHERE uid=? AND gps_sec>=? AND gps_sec<? ORDER BY gps_sec,fingerprint", uid, ceilSecond(from), ceilSecond(to))
+	return s.readFixes(ctx, "WHERE uid=? AND gps_sec>=? AND gps_sec<? ORDER BY gps_sec,fingerprint", uid, ceilSecond(from), ceilSecond(to))
+}
+
+func (s *Store) readFixes(ctx context.Context, clause string, args ...any) ([]domain.GPSFix, error) {
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	mapped, err := hasSignalColumns(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	signals := "NULL,NULL,'',''"
+	if mapped {
+		signals = "ignition,connected,ignition_source,connection_source"
+	}
+	rows, err := tx.QueryContext(ctx, "SELECT "+columns+","+signals+" FROM gps_fixes "+clause, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -196,5 +236,8 @@ func (s *Store) Between(ctx context.Context, uid string, from, to time.Time) ([]
 		}
 		fixes = append(fixes, fix)
 	}
-	return fixes, rows.Err()
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	return fixes, tx.Commit()
 }

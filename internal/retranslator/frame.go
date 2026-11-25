@@ -36,7 +36,7 @@ func readFrame(r io.Reader) ([]byte, error) {
 	return frame, nil
 }
 
-func decodeFrame(frame []byte) (domain.GPSFix, bool, error) {
+func decodeWithProfile(frame []byte, profile domain.Profile) (domain.GPSFix, bool, error) {
 	var fix domain.GPSFix
 	if len(frame) < 14 || len(frame) > MaxFrameBytes || int(binary.LittleEndian.Uint32(frame)) != len(frame)-4 {
 		return fix, false, errInvalidFrame
@@ -52,7 +52,10 @@ func decodeFrame(frame []byte) (domain.GPSFix, bool, error) {
 	}
 	fix.UID = string(uid)
 	fix.GPSTime = time.Unix(int64(binary.BigEndian.Uint32(metadata)), 0).UTC()
-	positionFlag := binary.BigEndian.Uint32(metadata[4:8])&1 != 0
+	flags := binary.BigEndian.Uint32(metadata[4:8])
+	positionFlag := flags&1 != 0
+	ignition := signalSource(profile.IgnitionParam)
+	connection := signalSource(profile.ConnectionParam)
 	blocks := metadata[8:]
 	var hasPosition bool
 	for len(blocks) > 0 {
@@ -81,8 +84,14 @@ func decodeFrame(frame []byte) (domain.GPSFix, bool, error) {
 		}
 		if string(name) != "posinfo" {
 			if !validSensorValue(valueType, value) {
-				return fix, false, errInvalidFrame
+				if string(name) != ignition.name && string(name) != connection.name {
+					return fix, false, errInvalidFrame
+				}
+				// The enclosing block is complete; an unreadable mapped value is unknown.
+				valueType = 0
 			}
+			ignition.observe(string(name), valueType, value, flags)
+			connection.observe(string(name), valueType, value, flags)
 			continue
 		}
 		if hasPosition || valueType != 2 || len(value) != 29 {
@@ -105,6 +114,8 @@ func decodeFrame(frame []byte) (domain.GPSFix, bool, error) {
 	}
 	if hasPosition {
 		fix.Fingerprint = sha256.Sum256(frame)
+		fix.Ignition, fix.Connected = ignition.value, connection.value
+		fix.IgnitionSource, fix.ConnectionSource = profile.IgnitionParam, profile.ConnectionParam
 	}
 	return fix, hasPosition, nil
 }

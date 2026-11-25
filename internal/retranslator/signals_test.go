@@ -1,9 +1,15 @@
 package retranslator
 
 import (
+	"context"
 	"encoding/binary"
+	"net"
+	"path/filepath"
 	"testing"
+	"time"
 	"wialon-sener-pilot/internal/domain"
+	"wialon-sener-pilot/internal/historydb"
+	"wialon-sener-pilot/internal/unitprofile"
 )
 
 func syntheticBlock(name string, kind byte, v []byte) []byte {
@@ -37,6 +43,7 @@ func TestR1MappedSignalsBelongToThisFrame(t *testing.T) {
 	}{
 		{"measured zero", [][]byte{ign(0), on}, "false", "true"},
 		{"missing", [][]byte{ign(1)}, "true", "unknown"},
+		{"malformed mapped scalar", [][]byte{syntheticBlock("contact", 3, []byte{1}), on}, "unknown", "true"},
 		{"unsupported", [][]byte{ign(2), on}, "unknown", "true"},
 		{"ambiguous", [][]byte{ign(0), ign(1), on}, "unknown", "true"},
 		{"wrong name", [][]byte{syntheticBlock("ign", 3, []byte{0, 0, 0, 1})}, "unknown", "unknown"},
@@ -82,4 +89,59 @@ func state(v *bool) string {
 		return "true"
 	}
 	return "false"
+}
+
+func TestR1TCPStatesSurviveReopen(t *testing.T) {
+	const uid = "DEMO-CR13"
+	ctx := context.Background()
+	p, err := unitprofile.LoadTCP(filepath.Join("..", "..", "testdata", "tcp-sener", "profile.json"), uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "capture.db")
+	writer, err := historydb.OpenWriter(path, uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+	peer, receiver := net.Pipe()
+	defer peer.Close()
+	if err := peer.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- receive(ctx, receiver, writer.Save, p) }()
+	off := syntheticBlock("ign", 3, []byte{0, 0, 0, 0})
+	on := syntheticBlock("online", 3, []byte{0, 0, 0, 1})
+	complete := syntheticFrame(1, off, on)
+	partial := syntheticFrame(1, on)
+	if _, err := peer.Write(append(complete, partial...)); err != nil {
+		t.Fatal(err)
+	}
+	peer.Close()
+	if err := completion(t, done); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reader, err := historydb.OpenReader(path, uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	rows, err := reader.Between(ctx, uid, time.Unix(60, 0), time.Unix(61, 0))
+	if err != nil || len(rows) != 2 {
+		t.Fatalf("rows=%d err=%v", len(rows), err)
+	}
+	states := map[string]int{}
+	for _, r := range rows {
+		if r.IgnitionSource != "ign" || r.ConnectionSource != "online" {
+			t.Fatalf("sources=%q/%q", r.IgnitionSource, r.ConnectionSource)
+		}
+		states[state(r.Ignition)+"/"+state(r.Connected)]++
+	}
+	if states["false/true"] != 1 || states["unknown/true"] != 1 {
+		t.Fatal(states)
+	}
 }
