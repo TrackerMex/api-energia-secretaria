@@ -1,0 +1,11 @@
+# Entrega local de TCP al simulador SENER
+
+El receptor conserva las señales de la trama con sus selectores. El comando `tcp-sener` lee las posiciones del intervalo UTC pedido y usa el generador multipart y la cola de entregas del piloto. El UID de retransmisión identifica al dispositivo en este flujo. La ficha puede omitir el ID numérico de Remote API.
+
+La cola persiste el UID y el RFC. Cada ejecución selecciona las claves del intervalo en una tabla temporal de su conexión SQLite. Esto permite releer intervalos no contiguos y procesar una llegada atrasada sin liberar reintentos de otras ventanas. La cola de Remote API mantiene su política de cursor y puede reabrir sus archivos anteriores. El simulador usa una dirección IP de loopback, el token fijo ficticio `local-demo` y el cliente multipart con redirecciones desactivadas.
+
+Las pruebas iniciales del puente fallaron en `6aefb79` y las de captura en `282c97c`. Al integrar la captura de señales de `c0d6260` y el puente de `ebd493b`, pasaron las seis pruebas de `cmd/tcp-sener` en 2.47 s. Las pruebas de regresión de `internal/delivery` e `internal/ingest` también pasaron. El implementer de captura verificó `internal/retranslator`, `internal/historydb`, `internal/unitprofile` y `cmd/receptor`. La revisión independiente se encarga de la única ejecución completa del harness sobre el conjunto entregado.
+
+`TestR5TCPToSENERLocal` compiló y ejecutó ambos binarios con archivos temporales, reinició los procesos y retransmitió un paquete independiente. El resultado fue un POST, un reporte aceptado con el UUID observado en el multipart y una posición en el historial. El caso tardó 1.86 s. Para la respuesta 429, la prueba de reintentos comprobó primero que el plazo bloqueaba el envío y después adelantó el vencimiento en la SQLite temporal para verificar la recuperación del UUID en el mismo intervalo.
+
+El ensayo adicional de operación con PowerShell y un simulador Python ejercitó el duplicado y una segunda posición sin señales. Se observaron dos posiciones en el historial, una aceptación, un registro inválido con motivo y un solo POST. [Comandos reproducibles](../README.md) · [Cobertura por requisito](../specs/tcp-sener-local/traceability.md)
