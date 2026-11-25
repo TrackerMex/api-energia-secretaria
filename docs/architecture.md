@@ -27,3 +27,7 @@ La hora del GPS determina qué posición es la más reciente. Una huella de la t
 El receptor asocia las lecturas de ignición y conexión con la posición de su misma trama. El historial SQLite distingue el valor falso de la ausencia de medición. El comando `cmd/tcp-sener` procesa las posiciones de la unidad incluidas en un intervalo UTC, con inicio incluido y fin excluido. La ficha sintética vincula el UID del retransmisor con los datos usados para construir el reporte.
 
 La cola de este ensayo se guarda en un archivo independiente del historial. Al volver a procesar un intervalo, el UID y la huella de la trama permiten reconocer los registros ya incorporados, conservar su identificador de transmisión y recuperar posiciones que llegaron tarde. El cliente multipart entrega el archivo JSON a un simulador de loopback. Una respuesta ambigua queda registrada para conciliación. [Diseño de la integración](../specs/tcp-sener-local/design.md)
+
+## Observación de Wialon Remote API
+
+`cmd/observar` compone el adaptador de Wialon en modo de lectura y el clasificador del dominio. El adaptador obtiene las posiciones de la unidad y ventana solicitadas. El clasificador compara las entradas del mensaje con su parámetro `can_rpm` y produce un resumen agregado. La salida mantiene el estado de conexión del GPS pendiente de validación. [Requisitos del modo de observación](../specs/observacion-api-cr13/requirements.md)

@@ -2,6 +2,22 @@
 
 El piloto en Go recibe posiciones de Wialon Retranslator o las consulta con Remote API. La prueba integrada usa el UID ficticio `DEMO-CR13`, una ficha de ejemplo, SQLite y un simulador de SENER en el mismo equipo. CR-13 es la unidad elegida para una futura prueba con datos reales.
 
+## Observar el motor de CR-13 con Wialon Remote API
+
+Para repetir el ensayo con una API simulada y datos ficticios, desde la raíz del proyecto:
+
+```powershell
+go test -count=1 -v ./cmd/observar -run '^TestR4ObservationReadOnly$'
+```
+
+Para consultar una unidad real, el proceso debe tener configurados `WIALON_UNIT_ID` (ID interno de la unidad), `WIALON_BASE_URL` (origen HTTPS del centro de datos) y `WIALON_TOKEN` (credencial de lectura). Estos valores se configuran en el entorno privado del proceso. La siguiente invocación procesa un intervalo explícito en UTC con ambos extremos incluidos:
+
+```powershell
+go run ./cmd/observar -from 2026-11-25T12:00:00Z -to 2026-11-25T12:10:00Z
+```
+
+La salida JSON cuenta **posiciones** por estado del motor, no arranques ni minutos de operación. `encendido` requiere la entrada digital 1 activa y RPM positivas en el mismo mensaje. `apagado` requiere la entrada inactiva y RPM cero. `indeterminado` agrupa discrepancias y datos ausentes o inválidos, con el desglose en `motivos`. Una consulta exitosa de una ventana vacía devuelve conteos cero. Un error de consulta termina con error. `conexion_gps` queda como `pendiente_de_validacion`. Este comando funciona de manera independiente de las colas de entrega. [Criterio de observación](internal/ingest/README.md#criterio-de-observación-para-cr-13)
+
 ## Prueba completa de TCP a SENER simulado
 
 Desde la raíz del repositorio, ejecuta en PowerShell:
