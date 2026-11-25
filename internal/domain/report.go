@@ -21,6 +21,7 @@ type Vehicle struct {
 
 // Profile contains the verified unit metadata and the device-specific signal mapping.
 type Profile struct {
+	RetranslatorUID string  `json:"retranslator_uid,omitempty"`
 	UnitID          int64   `json:"wialon_unit_id"`
 	RFC             string  `json:"rfc"`
 	Name            string  `json:"razon_social"`
@@ -35,10 +36,7 @@ var vinFormat = regexp.MustCompile(`^[A-HJ-NPR-Z0-9]{17}$`)
 var imeiFormat = regexp.MustCompile(`^[0-9]{15}$`)
 var uuidFormat = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
-func (p Profile) validate(unit int64) error {
-	if p.UnitID <= 0 || p.UnitID != unit {
-		return errors.New("la ficha no corresponde al ID de la unidad recibida")
-	}
+func (p Profile) validate() error {
 	if !rfcFormat.MatchString(p.RFC) || strings.TrimSpace(p.Name) == "" {
 		return errors.New("RFC o razón social inválidos")
 	}
@@ -64,17 +62,19 @@ func (p Profile) validate(unit int64) error {
 	return nil
 }
 
+type coordinates struct {
+	Longitude *float64 `json:"x"`
+	Latitude  *float64 `json:"y"`
+	Direction *int     `json:"c"`
+	Speed     *float64 `json:"s"`
+}
+
 type message struct {
-	Flags     uint32  `json:"f"`
-	Inputs    *uint32 `json:"i"`
-	Timestamp int64   `json:"t"`
-	Position  *struct {
-		Longitude *float64 `json:"x"`
-		Latitude  *float64 `json:"y"`
-		Direction *int     `json:"c"`
-		Speed     *float64 `json:"s"`
-	} `json:"pos"`
-	Params map[string]json.RawMessage `json:"p"`
+	Flags     uint32                     `json:"f"`
+	Inputs    *uint32                    `json:"i"`
+	Timestamp int64                      `json:"t"`
+	Position  *coordinates               `json:"pos"`
+	Params    map[string]json.RawMessage `json:"p"`
 }
 
 // binarySignal accepts a recorded, two-state measurement. A zero value can be
@@ -153,17 +153,54 @@ type envelope struct {
 // Report encodes the position as a one-element SENER report. Its caller
 // supplies the durably assigned transmission ID so retries keep the same ID.
 func Report(p Position, profile Profile, transmissionID string) ([]byte, error) {
-	if err := profile.validate(p.UnitID); err != nil {
+	if p.UnitID <= 0 || profile.UnitID != p.UnitID {
+		return nil, errors.New("la ficha no corresponde al ID de la unidad recibida")
+	}
+	if err := profile.validate(); err != nil {
 		return nil, err
 	}
+	var m message
+	if err := json.Unmarshal(p.Message, &m); err != nil {
+		return nil, errors.New("mensaje o fecha GPS inválidos")
+	}
+	return encodeReading(profile, transmissionID, m.Timestamp, m.Position, m.reading(profile.IgnitionParam), m.reading(profile.ConnectionParam))
+}
+
+func (m message) reading(selector string) *bool {
+	value, ok := m.signal(selector)
+	if !ok {
+		return nil
+	}
+	return &value
+}
+
+// TCPReport uses each sensor value only if it was captured with this selector.
+func TCPReport(fix GPSFix, profile Profile, transmissionID string) ([]byte, error) {
+	if err := profile.ValidateTCPMapping(fix.UID); err != nil {
+		return nil, err
+	}
+	if err := profile.validate(); err != nil {
+		return nil, err
+	}
+	ignition, connected := fix.Ignition, fix.Connected
+	if fix.IgnitionSource != profile.IgnitionParam {
+		ignition = nil
+	}
+	if fix.ConnectionSource != profile.ConnectionParam {
+		connected = nil
+	}
+	direction, speed := int(fix.Course), float64(fix.Speed)
+	coord := &coordinates{Longitude: &fix.Longitude, Latitude: &fix.Latitude, Direction: &direction, Speed: &speed}
+	return encodeReading(profile, transmissionID, fix.GPSTime.Unix(), coord, ignition, connected)
+}
+
+func encodeReading(profile Profile, transmissionID string, timestamp int64, coord *coordinates, ignition, connected *bool) ([]byte, error) {
 	if !uuidFormat.MatchString(transmissionID) {
 		return nil, errors.New("id_transmision debe ser un UUID")
 	}
-	var m message
-	if err := json.Unmarshal(p.Message, &m); err != nil || m.Timestamp <= 0 || m.Timestamp > 4294967295 {
+	if timestamp <= 0 || timestamp > 4294967295 {
 		return nil, errors.New("mensaje o fecha GPS inválidos")
 	}
-	coord := m.Position
 	if coord == nil || coord.Latitude == nil || coord.Longitude == nil || *coord.Latitude < -90 || *coord.Latitude > 90 || *coord.Longitude < -180 || *coord.Longitude > 180 {
 		return nil, errors.New("coordenadas GPS ausentes o fuera de rango")
 	}
@@ -173,22 +210,20 @@ func Report(p Position, profile Profile, transmissionID string) ([]byte, error) 
 	if coord.Speed == nil || *coord.Speed < 0 {
 		return nil, errors.New("velocidad GPS ausente o negativa")
 	}
-	ignition, ok := m.signal(profile.IgnitionParam)
-	if !ok {
+	if ignition == nil {
 		return nil, fmt.Errorf("lectura de ignición desconocida en %s", profile.IgnitionParam)
 	}
-	connected, ok := m.signal(profile.ConnectionParam)
-	if !ok {
+	if connected == nil {
 		return nil, fmt.Errorf("lectura de conexión desconocida en %s", profile.ConnectionParam)
 	}
 	state := "desconectado"
-	if connected {
+	if *connected {
 		state = "conectado"
 	}
 	row := transmission{
-		ID: transmissionID, GPS: time.Unix(m.Timestamp, 0).UTC().Format(time.RFC3339), Kind: "posicion",
+		ID: transmissionID, GPS: time.Unix(timestamp, 0).UTC().Format(time.RFC3339), Kind: "posicion",
 		Vehicle: profile.Vehicle, Geo: geo{*coord.Latitude, *coord.Longitude, *coord.Direction},
-		Status: vehicleStatus{*coord.Speed, ignition}, Device: deviceStatus{state, profile.IMEI},
+		Status: vehicleStatus{*coord.Speed, *ignition}, Device: deviceStatus{state, profile.IMEI},
 	}
 	return json.Marshal(envelope{profile.RFC, profile.Name, []transmission{row}})
 }

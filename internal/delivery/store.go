@@ -6,8 +6,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -16,11 +18,25 @@ import (
 )
 
 type Store struct {
-	db *sql.DB
+	db       *sql.DB
+	localTCP bool
 }
 
 func Open(path string, unitID int64, rfc string) (*Store, error) {
-	if unitID <= 0 || rfc == "" {
+	return open(path, unitID, rfc, "")
+}
+
+// OpenTCP binds a simulator queue to a retranslator UID. A legacy unmarked
+// outbox belongs to the Remote API flow and cannot become a simulator queue.
+func OpenTCP(path, rfc, uid string) (*Store, error) {
+	if uid == "" {
+		return nil, errors.New("missing retranslator UID")
+	}
+	return open(path, 0, rfc, uid)
+}
+
+func open(path string, unitID int64, rfc, uid string) (*Store, error) {
+	if (uid == "" && unitID <= 0) || rfc == "" {
 		return nil, errors.New("missing database identity")
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
@@ -30,14 +46,15 @@ func Open(path string, unitID int64, rfc string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err = file.Chmod(0600); err != nil {
-		file.Close()
-		return nil, err
-	}
 	if err = file.Close(); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", path)
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	dsn := url.URL{Scheme: "file", Path: "/" + strings.TrimPrefix(filepath.ToSlash(absolute), "/"), RawQuery: "_pragma=busy_timeout(10000)&_txlock=immediate&mode=rw"}
+	db, err := sql.Open("sqlite", dsn.String())
 	if err != nil {
 		return nil, err
 	}
@@ -48,7 +65,22 @@ func Open(path string, unitID int64, rfc string) (*Store, error) {
 			db.Close()
 		}
 	}()
-	_, err = db.Exec(`PRAGMA busy_timeout=10000;
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	// Bind and verify identity atomically, including the first concurrent open.
+	var tables, scopeTables, otherTables int
+	err = tx.QueryRow(`SELECT COUNT(*),COALESCE(SUM(name='outbox_scope'),0),
+ COALESCE(SUM(name NOT IN ('pilot','reports','outbox_scope')),0) FROM sqlite_schema WHERE type='table' AND name NOT GLOB 'sqlite_*'`).Scan(&tables, &scopeTables, &otherTables)
+	if err != nil {
+		return nil, err
+	}
+	if otherTables != 0 || (uid != "" && tables != 0 && scopeTables == 0) {
+		return nil, errors.New("el archivo no es una cola de esta fuente")
+	}
+	_, err = tx.Exec(`CREATE TABLE IF NOT EXISTS outbox_scope(instance INTEGER PRIMARY KEY CHECK(instance=1),tcp_uid TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS pilot (
  instance INTEGER PRIMARY KEY CHECK(instance=1), unit_id INTEGER NOT NULL, rfc TEXT NOT NULL,
  cursor INTEGER, cooldown INTEGER NOT NULL DEFAULT 0
@@ -61,19 +93,40 @@ CREATE INDEX IF NOT EXISTS by_status ON reports(status,retry_at);`)
 	if err != nil {
 		return nil, err
 	}
-	if _, err = db.Exec("INSERT OR IGNORE INTO pilot(instance,unit_id,rfc) VALUES(1,?,?)", unitID, rfc); err != nil {
+	if _, err = tx.Exec("INSERT OR IGNORE INTO outbox_scope(instance,tcp_uid) VALUES(1,?)", uid); err != nil {
+		return nil, err
+	}
+	var ownerUID string
+	if err = tx.QueryRow("SELECT tcp_uid FROM outbox_scope WHERE instance=1").Scan(&ownerUID); err != nil {
+		return nil, err
+	}
+	if ownerUID != uid {
+		return nil, errors.New("la cola pertenece a otra fuente o UID")
+	}
+	if _, err = tx.Exec("INSERT OR IGNORE INTO pilot(instance,unit_id,rfc) VALUES(1,?,?)", unitID, rfc); err != nil {
 		return nil, err
 	}
 	var unit int64
 	var owner string
-	if err = db.QueryRow("SELECT unit_id,rfc FROM pilot WHERE instance=1").Scan(&unit, &owner); err != nil {
+	if err = tx.QueryRow("SELECT unit_id,rfc FROM pilot WHERE instance=1").Scan(&unit, &owner); err != nil {
 		return nil, err
 	}
 	if unit != unitID || owner != rfc {
 		return nil, errors.New("database belongs to a different unit or RFC")
 	}
+	if uid != "" {
+		if _, err = tx.Exec("CREATE TEMP TABLE tcp_window(source_key TEXT PRIMARY KEY)"); err != nil {
+			return nil, err
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return nil, err
+	}
+	if err = os.Chmod(path, 0600); err != nil {
+		return nil, err
+	}
 	ok = true
-	return &Store{db: db}, nil
+	return &Store{db: db, localTCP: uid != ""}, nil
 }
 func (s *Store) Close() error { return s.db.Close() }
 
@@ -105,16 +158,29 @@ func (s *Store) SaveWindow(ctx context.Context, from, to time.Time, inputs []dom
 		return err
 	}
 	defer tx.Rollback()
-	var cursor sql.NullInt64
-	if err = tx.QueryRowContext(ctx, "SELECT cursor FROM pilot WHERE instance=1").Scan(&cursor); err != nil {
-		return err
-	}
-	if cursor.Valid && from.Unix() > cursor.Int64+1 {
-		return errors.New("window leaves a gap after the stored cursor")
+	if s.localTCP {
+		// The connection-local set prevents a concurrent command using another
+		// interval from changing which already-pending reports this one may send.
+		if _, err = tx.ExecContext(ctx, "DELETE FROM tcp_window"); err != nil {
+			return err
+		}
+	} else {
+		var cursor sql.NullInt64
+		if err = tx.QueryRowContext(ctx, "SELECT cursor FROM pilot WHERE instance=1").Scan(&cursor); err != nil {
+			return err
+		}
+		if cursor.Valid && from.Unix() > cursor.Int64+1 {
+			return errors.New("window leaves a gap after the stored cursor")
+		}
 	}
 	for _, input := range inputs {
 		if input.Key == "" || input.Build == nil {
 			return errors.New("missing source identity or mapper")
+		}
+		if s.localTCP {
+			if _, err = tx.ExecContext(ctx, "INSERT OR IGNORE INTO tcp_window(source_key) VALUES(?)", input.Key); err != nil {
+				return err
+			}
 		}
 		var id, state string
 		err = tx.QueryRowContext(ctx, "SELECT id,status FROM reports WHERE source_key=?", input.Key).Scan(&id, &state)
@@ -138,8 +204,10 @@ ON CONFLICT(source_key) DO UPDATE SET body=excluded.body,status=excluded.status,
 			return err
 		}
 	}
-	if _, err = tx.ExecContext(ctx, "UPDATE pilot SET cursor=MAX(COALESCE(cursor,?),?) WHERE instance=1", to.Unix(), to.Unix()); err != nil {
-		return err
+	if !s.localTCP {
+		if _, err = tx.ExecContext(ctx, "UPDATE pilot SET cursor=MAX(COALESCE(cursor,?),?) WHERE instance=1", to.Unix(), to.Unix()); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }
@@ -148,9 +216,13 @@ ON CONFLICT(source_key) DO UPDATE SET body=excluded.body,status=excluded.status,
 // outcome uncertain; automatic replay could deliver a duplicate.
 func (s *Store) Claim(ctx context.Context, now time.Time) (*domain.Envelope, error) {
 	var row domain.Envelope
+	filter := ""
+	if s.localTCP {
+		filter = " AND source_key IN (SELECT source_key FROM tcp_window)"
+	}
 	err := s.db.QueryRowContext(ctx, `UPDATE reports SET status='uncertain',detail='delivery_started',updated=?
 WHERE rowid=(SELECT rowid FROM reports WHERE status='pending' AND retry_at<=?
-AND (SELECT cooldown FROM pilot WHERE instance=1)<=? ORDER BY rowid LIMIT 1)
+AND (SELECT cooldown FROM pilot WHERE instance=1)<=?`+filter+` ORDER BY rowid LIMIT 1)
 RETURNING id,body`, now.Unix(), now.Unix(), now.Unix()).Scan(&row.ID, &row.Body)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil

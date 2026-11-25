@@ -35,16 +35,20 @@ func (p Pilot) RunWindow(ctx context.Context, from, to time.Time) error {
 }
 
 func (p Pilot) DeliverPending(ctx context.Context) error {
+	return deliverPending(ctx, p.Outbox, p.Sender, p.Profile.RFC)
+}
+
+func deliverPending(ctx context.Context, outbox domain.Outbox, sender domain.ReportSender, rfc string) error {
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		row, err := p.Outbox.Claim(ctx, time.Now())
+		row, err := outbox.Claim(ctx, time.Now())
 		if err != nil || row == nil {
 			return err
 		}
-		out := p.Sender.Send(ctx, p.Profile.RFC, row.Body)
-		if err = p.Outbox.Finish(ctx, row.ID, out); err != nil {
+		out := sender.Send(ctx, rfc, row.Body)
+		if err = outbox.Finish(ctx, row.ID, out); err != nil {
 			return err
 		}
 		if out.State == domain.Pending {

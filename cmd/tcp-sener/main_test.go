@@ -16,7 +16,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -102,9 +104,10 @@ type post struct {
 	timestamp string
 }
 
-func simulator(t *testing.T, replies []response) (*httptest.Server, *[]post) {
+func simulator(t *testing.T, replies []response) (*httptest.Server, func() []post) {
 	t.Helper()
 	var posts []post
+	var mu sync.Mutex
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" || r.Header.Get("Authorization") != "Bearer local-demo" {
 			t.Error("unexpected method or authorization")
@@ -127,12 +130,11 @@ func simulator(t *testing.T, replies []response) (*httptest.Server, *[]post) {
 			RFC  string `json:"rfc"`
 			Name string `json:"razon_social"`
 			Data []struct {
-				ID        string                                `json:"id_transmision"`
-				Timestamp string                                `json:"timestamp_gps"`
-				Type      string                                `json:"tipo_reporte"`
-				Vehicle   domain.Vehicle                        `json:"vehiculo"`
-				Geo       struct{ Lat, Lon, Direction float64 } `json:"-"`
-				Location  map[string]float64                    `json:"geolocalizacion"`
+				ID        string             `json:"id_transmision"`
+				Timestamp string             `json:"timestamp_gps"`
+				Type      string             `json:"tipo_reporte"`
+				Vehicle   domain.Vehicle     `json:"vehiculo"`
+				Location  map[string]float64 `json:"geolocalizacion"`
 				Status    struct {
 					Speed    float64 `json:"velocidad_kmh"`
 					Ignition *bool   `json:"motor_encendido"`
@@ -148,11 +150,13 @@ func simulator(t *testing.T, replies []response) (*httptest.Server, *[]post) {
 			return
 		}
 		d := body.Data[0]
-		if body.RFC != "XAXX010101000" || body.Name == "" || len(d.ID) != 36 || d.Type != "posicion" || d.Vehicle.Unit != "CR-13" || d.Location["latitud"] != 20 || d.Location["longitud"] != -100 || d.Location["direccion_grados"] != 90 || d.Status.Speed != 42 || d.Status.Ignition == nil || *d.Status.Ignition || d.Device.State != "conectado" || len(d.Device.IMEI) != 15 {
+		if body.RFC != "XAXX010101000" || body.Name != "DEMO" || len(d.ID) != 36 || d.Type != "posicion" || d.Vehicle.Unit != "CR-13" || d.Location["latitud"] != 20 || d.Location["longitud"] != -100 || d.Location["direccion_grados"] != 90 || d.Status.Speed != 42 || d.Status.Ignition == nil || *d.Status.Ignition || d.Device.State != "conectado" || d.Device.IMEI != "000000000000000" {
 			t.Errorf("unexpected report: %+v", body)
 		}
+		mu.Lock()
 		idx := len(posts)
 		posts = append(posts, post{d.ID, d.Timestamp})
+		mu.Unlock()
 		reply := response{200, `{"error":0}`}
 		if idx < len(replies) {
 			reply = replies[idx]
@@ -165,7 +169,7 @@ func simulator(t *testing.T, replies []response) (*httptest.Server, *[]post) {
 		}
 		w.WriteHeader(reply.code)
 		io.WriteString(w, reply.body)
-	})), &posts
+	})), func() []post { mu.Lock(); defer mu.Unlock(); return slices.Clone(posts) }
 }
 
 func TestR2MissingAndLegacySignals(t *testing.T) {
@@ -190,8 +194,8 @@ func TestR2MissingAndLegacySignals(t *testing.T) {
 		}
 		f.process(t, server, start, start.Add(time.Second))
 		rows := f.records(t)
-		if len(*posts) != 0 || len(rows) != 1 || rows[0].status != domain.Invalid || rows[0].detail == "" {
-			t.Fatal(*posts, rows)
+		if len(posts()) != 0 || len(rows) != 1 || rows[0].status != domain.Invalid || rows[0].detail == "" {
+			t.Fatal(posts(), rows)
 		}
 		hist, e := historydb.OpenReader(f.history, uid)
 		if e != nil {
@@ -202,6 +206,40 @@ func TestR2MissingAndLegacySignals(t *testing.T) {
 		if e != nil || len(items) != 1 {
 			t.Fatal(items, e)
 		}
+	}
+}
+func TestR2ChangedSelectorKeepsInvalidUntilCorrected(t *testing.T) {
+	f := newFixture(t)
+	f.save(t, 0, 1, true)
+	server, posts := simulator(t, nil)
+	defer server.Close()
+	original, err := os.ReadFile(profilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := strings.Replace(string(original), `"ign"`, `"another_input"`, 1)
+	path := filepath.Join(t.TempDir(), "changed.json")
+	if err = os.WriteFile(path, []byte(changed), 0600); err != nil {
+		t.Fatal(err)
+	}
+	args := f.args(server.URL, start, start.Add(time.Second))
+	args[3] = path
+	if err = run(context.Background(), args, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	rows := f.records(t)
+	if len(rows) != 1 || rows[0].status != domain.Invalid || !strings.Contains(rows[0].detail, "another_input") || len(posts()) != 0 {
+		t.Fatal(rows, posts())
+	}
+	changed = strings.Replace(string(original), `"wialon_unit_id": 7,`, "", 1)
+	if err = os.WriteFile(path, []byte(changed), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = run(context.Background(), args, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.records(t); len(got) != 1 || got[0].id != rows[0].id || got[0].status != domain.Accepted || len(posts()) != 1 {
+		t.Fatal(got, posts())
 	}
 }
 func TestR3ReprocessAndLateArrival(t *testing.T) {
@@ -218,8 +256,8 @@ func TestR3ReprocessAndLateArrival(t *testing.T) {
 	f.save(t, 150, 5, true)
 	f.process(t, server, start.Add(150*time.Second), start.Add(151*time.Second))
 	rows := f.records(t)
-	if len(first) != 2 || len(rows) != 4 || len(*posts) != 4 || rows[0] != first[0] || rows[1] != first[1] || first[0].id == first[1].id || (*posts)[2].timestamp != start.Add(-time.Second).Format(time.RFC3339) {
-		t.Fatal(rows, *posts)
+	if len(first) != 2 || len(rows) != 4 || len(posts()) != 4 || rows[0] != first[0] || rows[1] != first[1] || first[0].id == first[1].id || (posts())[2].timestamp != start.Add(-time.Second).Format(time.RFC3339) {
+		t.Fatal(rows, posts())
 	}
 }
 func TestR4DeliveryOutcomes(t *testing.T) {
@@ -238,8 +276,8 @@ func TestR4DeliveryOutcomes(t *testing.T) {
 				t.Fatal(rows)
 			}
 			f.process(t, server, start, start.Add(time.Second))
-			if len(*posts) != 1 {
-				t.Fatal("premature or unsafe resend", *posts)
+			if len(posts()) != 1 {
+				t.Fatal("premature or unsafe resend", posts())
 			}
 			if tc.want == domain.Pending {
 				// Advance the stored deadline rather than sleeping for a minute.
@@ -253,12 +291,12 @@ func TestR4DeliveryOutcomes(t *testing.T) {
 					t.Fatal(e)
 				}
 				f.process(t, server, start.Add(20*time.Second), start.Add(21*time.Second))
-				if len(*posts) != 1 {
+				if len(posts()) != 1 {
 					t.Fatal("sent a pending report outside requested window")
 				}
 				f.process(t, server, start, start.Add(time.Second))
-				if len(*posts) != 2 || (*posts)[0].id != (*posts)[1].id || f.records(t)[0].status != domain.Accepted {
-					t.Fatal(*posts, f.records(t))
+				if len(posts()) != 2 || (posts())[0].id != (posts())[1].id || f.records(t)[0].status != domain.Accepted {
+					t.Fatal(posts(), f.records(t))
 				}
 			}
 		})
@@ -279,11 +317,33 @@ func TestR2RejectExternalEndpointAndForeignQueue(t *testing.T) {
 	remote.Close()
 	server, posts := simulator(t, nil)
 	defer server.Close()
-	if err := run(context.Background(), f.args(server.URL, start, start.Add(time.Second)), io.Discard); err == nil || len(*posts) != 0 {
+	if err := run(context.Background(), f.args(server.URL, start, start.Add(time.Second)), io.Discard); err == nil || len(posts()) != 0 {
 		t.Fatal("adopted Remote API outbox")
 	}
+	// Pre-integration queues lack a source marker and retain their Remote API identity.
+	legacy, err := sql.Open("sqlite", f.outbox)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = legacy.Exec("DROP TABLE outbox_scope")
+	legacy.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = run(context.Background(), f.args(server.URL, start, start.Add(time.Second)), io.Discard); err == nil || len(posts()) != 0 {
+		t.Fatal("adopted a legacy remote outbox")
+	}
+	remote, err = delivery.Open(f.outbox, 7, "XAXX010101000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	remote.Close()
 	f.outbox = filepath.Join(t.TempDir(), "tcp.db")
 	f.process(t, server, start, start.Add(time.Second))
+	if wrong, err := delivery.OpenTCP(f.outbox, "XAXX010101000", "DEMO-OTHER"); err == nil {
+		wrong.Close()
+		t.Fatal("allowed another retranslator UID")
+	}
 	if remote, e = delivery.Open(f.outbox, 7, "XAXX010101000"); e == nil {
 		remote.Close()
 		t.Fatal("remote API opened a local simulator queue")
@@ -368,9 +428,7 @@ func TestR5TCPToSENERLocal(t *testing.T) {
 		t.Fatal(e)
 	}
 	rows := f.records(t)
-	if len(positions) != 1 || len(rows) != 1 || rows[0].status != domain.Accepted || len(*posts) != 1 || (*posts)[0].id != rows[0].id || (*posts)[0].timestamp != start.Format(time.RFC3339) {
-		t.Fatal(positions, rows, *posts)
+	if len(positions) != 1 || len(rows) != 1 || rows[0].status != domain.Accepted || len(posts()) != 1 || (posts())[0].id != rows[0].id || (posts())[0].timestamp != start.Format(time.RFC3339) {
+		t.Fatal(positions, rows, posts())
 	}
 }
-
-var _ = strings.Builder{}
