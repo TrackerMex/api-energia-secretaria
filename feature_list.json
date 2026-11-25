@@ -38,7 +38,7 @@
   {
     "id": 4,
     "name": "observacion-api-cr13",
-    "status": "in_progress",
+    "status": "done",
     "priority": "P1",
     "description": "Contrastar ignición y RPM de cada posición de una unidad con Wialon Remote API en modo de observación.",
     "acceptance_criteria": [
