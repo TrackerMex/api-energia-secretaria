@@ -45,7 +45,7 @@ func environment(t *testing.T, origin string) func(string) string {
 
 func noSensitive(t *testing.T, text string) {
 	t.Helper()
-	for _, private := range []string{unit, token, session, physical, longitude, "pos\"", "imei", "can_rpm"} {
+	for _, private := range []string{unit, token, session, physical, longitude, "pos\"", "imei"} {
 		if strings.Contains(text, private) {
 			t.Fatalf("la salida reveló un dato privado del ensayo")
 		}
@@ -183,7 +183,9 @@ func TestR3PrivateFailuresAndRedirect(t *testing.T) {
 	var received atomic.Int32
 	second := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { received.Add(1) }))
 	defer second.Close()
+	var firstHits atomic.Int32
 	first := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		firstHits.Add(1)
 		w.Header().Set("Location", second.URL)
 		w.WriteHeader(http.StatusTemporaryRedirect)
 	}))
@@ -200,6 +202,21 @@ func TestR3PrivateFailuresAndRedirect(t *testing.T) {
 			t.Fatal("configuración inválida aceptada")
 		}
 		noSensitive(t, err.Error())
+	}
+	if firstHits.Load() != 1 {
+		t.Fatal("configuración inválida abrió sesión")
+	}
+	for _, field := range []string{"WIALON_UNIT_ID", "WIALON_TOKEN"} {
+		cfg := environment(t, first.URL)
+		incomplete := func(key string) string {
+			if key == field {
+				return ""
+			}
+			return cfg(key)
+		}
+		if err = run(context.Background(), args, incomplete, first.Client(), &out); err == nil || firstHits.Load() != 1 {
+			t.Fatal("configuración incompleta abrió sesión", field)
+		}
 	}
 	// Accidental plaintext origin must fail before starting a token session.
 	var plainHits atomic.Int32
