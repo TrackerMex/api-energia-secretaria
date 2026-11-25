@@ -2,7 +2,7 @@
 
 **Última actualización**: 2026-11-25
 **Features completadas**: 2/3 (`feature_list.json`)
-**Pendientes**: aprobación de la prueba integrada con SENER simulado y, en una fase posterior, prueba real con CR-13
+**Pendientes**: implementación de la prueba integrada con SENER simulado y, en una fase posterior, prueba real con CR-13
 **En producción**: no
 
 ## Estado actual

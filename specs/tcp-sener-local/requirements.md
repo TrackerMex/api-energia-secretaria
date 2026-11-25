@@ -1,6 +1,6 @@
 ---
 feature: tcp-sener-local
-status: draft
+status: approved
 tags: [harness, spec]
 ---
 
@@ -22,4 +22,4 @@ La conexión con Wialon real, el despliegue en Hostinger, el envío a SENER desa
 
 ## Aprobación
 
-- [ ] Aprobado por humano (fecha: ____-__-__)
+- [x] Aprobado por humano (fecha: 2026-11-25)
