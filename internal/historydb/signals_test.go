@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -66,5 +67,75 @@ INSERT INTO gps_fixes VALUES('DEMO-CR13',zeroblob(32),10,0,0,0,0);`)
 		if rows[0].Ignition != nil || rows[0].Connected != nil || rows[0].ConnectionSource != "" || rows[1].Ignition == nil || *rows[1].Ignition || rows[1].Connected != nil || rows[1].IgnitionSource != "ign" || rows[1].ConnectionSource != "online" {
 			t.Fatalf("after migration rows=%+v", rows)
 		}
+	}
+}
+
+func TestR1R3ReplayCompletesOnlyCompatibleMeasurements(t *testing.T) {
+	const uid = "DEMO-CR13"
+	ctx := context.Background()
+	store, err := OpenWriter(filepath.Join(t.TempDir(), "replay.db"), uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	base := domain.GPSFix{UID: uid, GPSTime: time.Unix(10, 0), Fingerprint: [32]byte{1}}
+	off, on := false, true
+	save := func(ign, online *bool, ignitionSource, connectionSource string) {
+		t.Helper()
+		fix := base
+		fix.Ignition, fix.Connected = ign, online
+		fix.IgnitionSource, fix.ConnectionSource = ignitionSource, connectionSource
+		if err := store.Save(ctx, fix); err != nil {
+			t.Fatal(err)
+		}
+	}
+	check := func(ign, online *bool, ignitionSource, connectionSource string) {
+		t.Helper()
+		rows, err := store.Between(ctx, uid, time.Unix(0, 0), time.Unix(20, 0))
+		if err != nil || len(rows) != 1 {
+			t.Fatalf("rows=%d err=%v", len(rows), err)
+		}
+		got := rows[0]
+		if !reflect.DeepEqual(got.Ignition, ign) || !reflect.DeepEqual(got.Connected, online) || got.IgnitionSource != ignitionSource || got.ConnectionSource != connectionSource {
+			t.Fatalf("stored signals %v/%v from %q/%q, want %v/%v from %q/%q", got.Ignition, got.Connected, got.IgnitionSource, got.ConnectionSource, ign, online, ignitionSource, connectionSource)
+		}
+	}
+	save(nil, nil, "", "") // Position-only capture, same layout as a migrated row.
+	save(nil, nil, "other", "online")
+	check(nil, nil, "", "")
+	save(&off, nil, "ign", "old_link") // A replay without a measured connection does not supply that field.
+	check(&off, nil, "ign", "")
+	save(&on, &on, "other", "ign") // Never reuse known ignition as connection.
+	check(&off, nil, "ign", "")
+	save(nil, nil, "", "")
+	check(&off, nil, "ign", "")
+	save(&on, &off, "ign", "online")
+	check(&off, &off, "ign", "online")
+	save(nil, &on, "ign", "online")
+	check(&off, &off, "ign", "online")
+}
+
+func TestR1ReplayCanCorrectOnlyTheUnmeasuredSelector(t *testing.T) {
+	const uid = "DEMO-CR13"
+	ctx := context.Background()
+	s, err := OpenWriter(filepath.Join(t.TempDir(), "history.db"), uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	off, on := false, true
+	original := domain.GPSFix{UID: uid, GPSTime: time.Unix(25, 0), Fingerprint: [32]byte{2}, Ignition: &off, IgnitionSource: "ign", ConnectionSource: "old_link"}
+	if err := s.Save(ctx, original); err != nil {
+		t.Fatal(err)
+	}
+	replay := original
+	replay.Connected = &on
+	replay.ConnectionSource = "online"
+	if err := s.Save(ctx, replay); err != nil {
+		t.Fatal(err)
+	}
+	fix, err := s.Latest(ctx, uid)
+	if err != nil || fix == nil || !reflect.DeepEqual(fix.Ignition, &off) || !reflect.DeepEqual(fix.Connected, &on) || fix.IgnitionSource != "ign" || fix.ConnectionSource != "online" {
+		t.Fatalf("after corrected connection mapping: %+v err=%v", fix, err)
 	}
 }
