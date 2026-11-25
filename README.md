@@ -1,6 +1,18 @@
 # Piloto Wialon–SENER en Go
 
-El piloto lee las posiciones de una unidad de Wialon Remote API, crea el reporte de SENER y registra cada entrega en SQLite. Se eligió CR-13 para una futura prueba real. La configuración incluida es sintética. El servidor de Hostinger es el destino previsto para una fase posterior.
+El piloto en Go recibe posiciones de Wialon Retranslator o las consulta con Remote API. La prueba integrada usa el UID ficticio `DEMO-CR13`, una ficha de ejemplo, SQLite y un simulador de SENER en el mismo equipo. CR-13 es la unidad elegida para una futura prueba con datos reales.
+
+## Prueba completa de TCP a SENER simulado
+
+Desde la raíz del repositorio, ejecuta en PowerShell:
+
+```powershell
+go test -count=1 -v ./cmd/tcp-sener -run '^TestR5TCPToSENERLocal$'
+```
+
+La prueba abre sus propios puertos de loopback y bases SQLite temporales. Entrega una posición ficticia al receptor TCP, procesa el intervalo del historial y comprueba el archivo JSON recibido por el simulador. Tras reiniciar y retransmitir, el resultado esperado es **una posición, un reporte aceptado y un solo POST**.
+
+La ficha de captura identifica el UID y las señales históricas de ignición y conexión del GPS. Un cero medido es válido. Una lectura desconocida o ausente deja la posición en el historial y registra el motivo en la cola. Las posiciones antiguas que carecen de estas mediciones siguen siendo consultables. [Ficha del ensayo](testdata/tcp-sener/profile.json) · [Requisitos de la prueba integrada](specs/tcp-sener-local/requirements.md)
 
 ## Receptor TCP de CR-13
 
@@ -38,7 +50,7 @@ Para detener la escucha, usa Ctrl+C en la primera ventana. Las consultas leen el
 go test -count=1 -v ./cmd/receptor -run '^TestR6TCPHistoryLocal$'
 ```
 
-La fase TCP conserva el historial de una unidad. El emisor a SENER sigue tomando sus datos del piloto con Remote API. [Requisitos del receptor](specs/receptor-tcp-cr13/requirements.md)
+Esta trama de ejemplo sirve para consultar el historial de posiciones. Para probar el envío local usa el ensayo integrado de la primera sección, que incluye las dos señales. [Requisitos del receptor](specs/receptor-tcp-cr13/requirements.md)
 
 ## Probar el envío a SENER en local
 

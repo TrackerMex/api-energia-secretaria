@@ -21,3 +21,9 @@ La aplicación importa únicamente el dominio y la biblioteca estándar de Go. L
 Una conexión TCP entrega tramas de Wialon Retranslator 1.0 al adaptador `internal/retranslator`. El caso de uso en `internal/application` selecciona el UID configurado. El adaptador `internal/historydb` persiste cada posición aceptada en el archivo SQLite del receptor. El comando `cmd/receptor` conecta estas piezas y sirve también para consultar la última posición y el historial. La cola de entrega a SENER conserva su propio ciclo de vida.
 
 La hora del GPS determina qué posición es la más reciente. Una huella de la trama completa identifica las retransmisiones exactas, incluso tras un reinicio. [Diseño y requisitos de la fase TCP](../specs/receptor-tcp-cr13/design.md)
+
+## Del historial TCP al simulador de SENER
+
+El receptor asocia las lecturas de ignición y conexión con la posición de su misma trama. El historial SQLite distingue el valor falso de la ausencia de medición. El comando `cmd/tcp-sener` procesa las posiciones de la unidad incluidas en un intervalo UTC, con inicio incluido y fin excluido. La ficha sintética vincula el UID del retransmisor con los datos usados para construir el reporte.
+
+La cola de este ensayo se guarda en un archivo independiente del historial. Al volver a procesar un intervalo, el UID y la huella de la trama permiten reconocer los registros ya incorporados, conservar su identificador de transmisión y recuperar posiciones que llegaron tarde. El cliente multipart entrega el archivo JSON a un simulador de loopback. Una respuesta ambigua queda registrada para conciliación. [Diseño de la integración](../specs/tcp-sener-local/design.md)
