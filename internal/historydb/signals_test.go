@@ -115,6 +115,41 @@ func TestR1R3ReplayCompletesOnlyCompatibleMeasurements(t *testing.T) {
 	check(&off, &off, "ign", "online")
 }
 
+func TestR1ReplayPreservesKnownConnectionWhileFillingIgnition(t *testing.T) {
+	const uid = "DEMO-CR13"
+	ctx := context.Background()
+	s, err := OpenWriter(filepath.Join(t.TempDir(), "history.db"), uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	off, on := false, true
+	original := domain.GPSFix{UID: uid, GPSTime: time.Unix(25, 0).UTC(), Fingerprint: [32]byte{2}, Connected: &off, ConnectionSource: "online", IgnitionSource: "old_ign"}
+	if err := s.Save(ctx, original); err != nil {
+		t.Fatal(err)
+	}
+	replay := original
+	replay.Ignition = &on
+	replay.IgnitionSource = "online"
+	replay.ConnectionSource = "ign"
+	if err := s.Save(ctx, replay); err != nil {
+		t.Fatal(err)
+	}
+	fix, err := s.Latest(ctx, uid)
+	if err != nil || !reflect.DeepEqual(fix, &original) {
+		t.Fatalf("after swapped mapping: %+v err=%v", fix, err)
+	}
+	replay.IgnitionSource = "ign"
+	replay.ConnectionSource = "online"
+	if err := s.Save(ctx, replay); err != nil {
+		t.Fatal(err)
+	}
+	fix, err = s.Latest(ctx, uid)
+	if err != nil || !reflect.DeepEqual(fix, &replay) {
+		t.Fatalf("after corrected ignition mapping: %+v err=%v", fix, err)
+	}
+}
+
 func TestR1ReplayCanCorrectOnlyTheUnmeasuredSelector(t *testing.T) {
 	const uid = "DEMO-CR13"
 	ctx := context.Background()

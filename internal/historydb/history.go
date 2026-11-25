@@ -159,8 +159,26 @@ func (s *Store) Save(ctx context.Context, fix domain.GPSFix) error {
 	if fix.UID != s.uid {
 		return errors.New("el UID de la posición difiere del configurado")
 	}
-	_, err := s.db.ExecContext(ctx, `INSERT INTO gps_fixes(uid,fingerprint,gps_sec,latitude,longitude,speed,course,ignition,connected,ignition_source,connection_source)
- VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(uid,fingerprint) DO NOTHING`, fix.UID, fix.Fingerprint[:], fix.GPSTime.Unix(), fix.Latitude, fix.Longitude, fix.Speed, fix.Course, fix.Ignition, fix.Connected, fix.IgnitionSource, fix.ConnectionSource)
+	// Replaying identical bytes can reveal a previously unmapped signal. Keep
+	// each known measurement and its original selector together.
+	_, err := s.db.ExecContext(ctx, `INSERT INTO gps_fixes AS stored
+ (uid,fingerprint,gps_sec,latitude,longitude,speed,course,ignition,connected,ignition_source,connection_source)
+ VALUES(?,?,?,?,?,?,?,?,?,?,?)
+ ON CONFLICT(uid,fingerprint) DO UPDATE SET
+ (ignition,ignition_source,connected,connection_source) = (
+   SELECT
+     CASE WHEN add_ignition THEN excluded.ignition ELSE stored.ignition END,
+     CASE WHEN add_ignition THEN excluded.ignition_source ELSE stored.ignition_source END,
+     CASE WHEN add_connection THEN excluded.connected ELSE stored.connected END,
+     CASE WHEN add_connection THEN excluded.connection_source ELSE stored.connection_source END
+   FROM (SELECT
+     stored.ignition IS NULL AND excluded.ignition IS NOT NULL AND excluded.ignition_source <> ''
+       AND (stored.connected IS NULL OR excluded.ignition_source <> stored.connection_source) AS add_ignition,
+     stored.connected IS NULL AND excluded.connected IS NOT NULL AND excluded.connection_source <> ''
+       AND (stored.ignition IS NULL OR excluded.connection_source <> stored.ignition_source) AS add_connection)
+ )
+ WHERE (stored.ignition IS NULL AND excluded.ignition IS NOT NULL)
+    OR (stored.connected IS NULL AND excluded.connected IS NOT NULL)`, fix.UID, fix.Fingerprint[:], fix.GPSTime.Unix(), fix.Latitude, fix.Longitude, fix.Speed, fix.Course, fix.Ignition, fix.Connected, fix.IgnitionSource, fix.ConnectionSource)
 	return err
 }
 
