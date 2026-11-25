@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -24,10 +25,13 @@ import (
 
 const usage = "uso: observar -from UTC -to UTC (RFC3339 en segundos, ambos extremos incluidos)"
 
+// time.Parse truncates fractions after nine digits. Check the original RFC3339
+// spelling so every digit must be zero, even beyond nanosecond precision.
+var wholeSecondUTC = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.0+)?(Z|[+-]00:00)$`)
+
 func utcSecond(text string) (time.Time, error) {
 	instant, err := time.Parse(time.RFC3339, text)
-	_, offset := instant.Zone()
-	if err != nil || offset != 0 || instant.Nanosecond() != 0 || instant.Unix() < 0 || instant.Unix() > math.MaxUint32 {
+	if err != nil || !wholeSecondUTC.MatchString(text) || instant.Unix() < 0 || instant.Unix() > math.MaxUint32 {
 		return time.Time{}, errors.New("se requiere una fecha UTC RFC3339 en segundos dentro del rango de Wialon")
 	}
 	return instant.UTC(), nil
