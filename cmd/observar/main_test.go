@@ -229,3 +229,37 @@ func TestR3PrivateFailuresAndRedirect(t *testing.T) {
 		noSensitive(t, err.Error())
 	}
 }
+
+func TestR1ExactUTCSecondBeforeLogin(t *testing.T) {
+	const stamp = "1970-01-01T00:01:40"
+	for _, tc := range []struct{ name, from, to string }{
+		{"inicio después del fin por un décimo de nanosegundo", stamp + ".0000000001Z", firstSecond},
+		{"fin con 12 dígitos", firstSecond, stamp + ".000000000001+00:00"},
+		{"coma antes de fracción no nula", stamp + ",0000000001+00:00", firstSecond},
+		{"coma con ceros no es RFC3339", firstSecond, stamp + ",000000000000Z"},
+		{"fuera del rango inferior", "1969-12-31T23:59:59Z", firstSecond},
+		{"fuera del rango superior", firstSecond, "2106-02-07T06:28:16Z"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := wialon(t, `{"count":0,"messages":[]}`, "", 100)
+			var out bytes.Buffer
+			err := run(context.Background(), []string{"-from", tc.from, "-to", tc.to}, environment(t, fake.URL), fake.Client(), &out)
+			if err == nil || out.Len() != 0 || len(fake.services()) != 0 {
+				t.Fatalf("se esperaba rechazo antes de la red; err=%v, peticiones=%d", err, len(fake.services()))
+			}
+		})
+	}
+	t.Run("fracciones nulas y desplazamiento UTC", func(t *testing.T) {
+		fake := wialon(t, `{"count":0,"messages":[]}`, "", 100)
+		var out bytes.Buffer
+		err := run(context.Background(), []string{"-from", stamp + ".000000000000Z", "-to", stamp + ".0+00:00"}, environment(t, fake.URL), fake.Client(), &out)
+		if err != nil || out.Len() == 0 || len(fake.services()) != 3 {
+			t.Fatalf("ventana válida de un segundo: %v", err)
+		}
+		for _, stamp := range []string{"1970-01-01T00:00:00+00:00", "2106-02-07T06:28:15.000000000000+00:00"} {
+			if _, err := utcSecond(stamp); err != nil {
+				t.Fatalf("límite válido %s: %v", stamp, err)
+			}
+		}
+	})
+}
