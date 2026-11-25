@@ -14,6 +14,19 @@ La prueba abre sus propios puertos de loopback y bases SQLite temporales. Entreg
 
 La ficha de captura identifica el UID y las señales históricas de ignición y conexión del GPS. Un cero medido es válido. Una lectura desconocida o ausente deja la posición en el historial y registra el motivo en la cola. Las posiciones antiguas que carecen de estas mediciones siguen siendo consultables. [Ficha del ensayo](testdata/tcp-sener/profile.json) · [Requisitos de la prueba integrada](specs/tcp-sener-local/requirements.md)
 
+Para procesar un intervalo con un simulador HTTP propio ya en marcha, inicia la captura con `-profile` y usa la misma ficha al procesar el historial. En una segunda terminal, ajusta el puerto del simulador y las dos fechas al ensayo. El ejemplo utiliza archivos distintos para la captura y para la cola.
+
+```powershell
+go run ./cmd/receptor listen -uid DEMO-CR13 -profile ./testdata/tcp-sener/profile.json -db ./state/tcp-sener-historial.db -listen 127.0.0.1:20163
+```
+
+```powershell
+$simulador = 'http://127.0.0.1:18081/api/v1/telemetria/reporte/'
+go run ./cmd/tcp-sener -uid DEMO-CR13 -profile ./testdata/tcp-sener/profile.json -history ./state/tcp-sener-historial.db -outbox ./state/tcp-sener-cola.db -from 2026-11-25T00:00:00Z -to 2026-11-26T00:00:00Z -endpoint $simulador
+```
+
+El comando muestra los conteos acumulados de la cola. Si llegan posiciones atrasadas, vuelve a procesar su intervalo. Los reportes aceptados conservan su identificador y una respuesta incierta queda pendiente de conciliación.
+
 ## Receptor TCP de CR-13
 
 El receptor guarda las posiciones que llegan por Wialon Retranslator 1.0 en el archivo SQLite que indiques con `-db`. El siguiente ejemplo usa `state/cr13-demo.db`, el alias CR-13 y el UID ficticio `DEMO-CR13`. El receptor escucha en el propio equipo y el historial se puede consultar aun después de detenerlo. [Especificación del protocolo](https://extapi.wialon.com/hw/cfg/WialonRetranslator%201.0_en.pdf)
