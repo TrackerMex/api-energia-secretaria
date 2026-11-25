@@ -22,5 +22,17 @@
       "Las posiciones se recuperan por hora GPS, incluidos datos históricos y retransmisiones, sin duplicar registros.",
       "Una prueba local recupera el historial después de reiniciar. El flujo de entrega de SENER es independiente."
     ]
+  },
+  {
+    "id": 3,
+    "name": "tcp-sener-local",
+    "status": "pending",
+    "priority": "P1",
+    "description": "Conectar el historial TCP de una unidad sintética con la cola de entrega y un simulador local de SENER.",
+    "acceptance_criteria": [
+      "Una posición con las dos señales verificables llega al simulador en el contrato de SENER.",
+      "Se conserva el motivo si falta una señal obligatoria, incluso en el historial creado antes de esta fase.",
+      "Al reiniciar y retransmitir una trama ya aceptada se conserva una sola posición y una sola entrega aceptada."
+    ]
   }
 ]

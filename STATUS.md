@@ -1,8 +1,8 @@
 # Piloto Wialon–SENER
 
-**Última actualización**: 2026-11-18
-**Features completadas**: 2/2 (`feature_list.json`)
-**Pendientes**: prueba con una unidad real y conexión del historial TCP a la entrega de SENER
+**Última actualización**: 2026-11-25
+**Features completadas**: 2/3 (`feature_list.json`)
+**Pendientes**: aprobación de la prueba integrada con SENER simulado y, en una fase posterior, prueba real con CR-13
 **En producción**: no
 
 ## Estado actual
